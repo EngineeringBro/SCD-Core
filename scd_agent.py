@@ -30,8 +30,9 @@ logging.basicConfig(
 log = logging.getLogger("scd-core")
 
 # ─── Dry Run Mode ─────────────────────────────────────────────────────────────
-# Set to False only when Hussein explicitly approves live execution.
-DRY_RUN = True
+# Controlled by GitHub Secret LIVE_MODE. Default is ALWAYS dry-run.
+# To enable live execution: set GitHub Secret LIVE_MODE=true (requires repo admin access).
+DRY_RUN = os.environ.get("LIVE_MODE", "false").strip().lower() != "true"
 
 JIRA_EMAIL    = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN    = os.environ["JIRA_API_TOKEN"]
