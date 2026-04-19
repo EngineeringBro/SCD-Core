@@ -164,19 +164,11 @@ def close_ticket(key: str, resolution_id: str, comment: str = None) -> bool:
 
 
 def add_internal_comment(key: str, text: str) -> bool:
-    """Add an internal comment (not visible to customer) flagging for human review."""
+    """Add a true internal note (public=False) via Service Desk API — not visible to customer."""
     try:
-        jira_post(f"/rest/api/3/issue/{key}/comment", {
-            "body": {
-                "type": "doc", "version": 1,
-                "content": [{"type": "paragraph", "content": [
-                    {"type": "text", "text": f"[SCD Core] {text}"}
-                ]}]
-            },
-            "visibility": {
-                "type": "role",
-                "value": "Service Desk Team"
-            }
+        jira_post(f"/rest/servicedeskapi/request/{key}/comment", {
+            "body":   f"[SCD Core] {text}",
+            "public": False,
         })
         return True
     except error.HTTPError as e:
