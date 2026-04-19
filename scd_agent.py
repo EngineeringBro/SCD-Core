@@ -3,8 +3,17 @@ SCD Core Agent v0.1
 Autonomous Jira support ticket classifier and resolver.
 Fetches open SCD tickets, classifies them, and takes action.
 
-DRY_RUN = True  →  No changes made to Jira. All actions are logged only.
-DRY_RUN = False →  Live mode. Agent will post comments and close tickets.
+ACCESS MODEL — READ ONLY BY DEFAULT:
+  The agent can ONLY read Jira data unless the correct passphrase is supplied
+  at manual trigger time via the GitHub Actions workflow_dispatch input.
+
+  - Scheduled (cron) runs: ALWAYS read-only. Cannot supply a passphrase.
+  - Manual trigger, no passphrase or wrong passphrase: read-only.
+  - Manual trigger + correct passphrase: write access enabled.
+
+  Every write function (jira_post, jira_put, close_ticket,
+  add_internal_comment) enforces this check independently. Even if the
+  main loop logic is changed, no write reaches Jira without the passphrase.
 """
 
 import json
@@ -61,6 +70,9 @@ def jira_get(path: str, params: dict = None) -> dict:
 
 
 def jira_post(path: str, body: dict) -> dict:
+    """POST to Jira. Hard-blocked unless passphrase was verified at startup."""
+    if DRY_RUN:
+        raise PermissionError("[WRITE BLOCKED] jira_post called in dry-run mode. Passphrase required.")
     url  = JIRA_BASE_URL + path
     data = json.dumps(body).encode()
     req  = request.Request(url, data=data, headers=_headers, method="POST")
@@ -69,6 +81,9 @@ def jira_post(path: str, body: dict) -> dict:
 
 
 def jira_put(path: str, body: dict) -> dict:
+    """PUT to Jira. Hard-blocked unless passphrase was verified at startup."""
+    if DRY_RUN:
+        raise PermissionError("[WRITE BLOCKED] jira_put called in dry-run mode. Passphrase required.")
     url  = JIRA_BASE_URL + path
     data = json.dumps(body).encode()
     req  = request.Request(url, data=data, headers=_headers, method="PUT")
@@ -147,7 +162,9 @@ FIXED_RESOLUTION_ID   = "10000"
 
 
 def close_ticket(key: str, resolution_id: str, comment: str = None) -> bool:
-    """Transition ticket to Closed with optional comment."""
+    """Transition ticket to Closed. Hard-blocked in dry-run mode."""
+    if DRY_RUN:
+        raise PermissionError("[WRITE BLOCKED] close_ticket called in dry-run mode. Passphrase required.")
     try:
         if comment:
             jira_post(f"/rest/api/3/issue/{key}/comment", {
@@ -169,7 +186,9 @@ def close_ticket(key: str, resolution_id: str, comment: str = None) -> bool:
 
 
 def add_internal_comment(key: str, text: str) -> bool:
-    """Add a true internal note (public=False) via Service Desk API — not visible to customer."""
+    """Add internal note. Hard-blocked in dry-run mode."""
+    if DRY_RUN:
+        raise PermissionError("[WRITE BLOCKED] add_internal_comment called in dry-run mode. Passphrase required.")
     try:
         jira_post(f"/rest/servicedeskapi/request/{key}/comment", {
             "body":   f"[SCD Core] {text}",
