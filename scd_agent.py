@@ -253,6 +253,10 @@ def run():
     log.info(f"SCD Core Agent starting — {datetime.now(timezone.utc).isoformat()}")
     if DRY_RUN:
         log.info("*** DRY RUN MODE — No changes will be made to Jira ***")
+    else:
+        log.info("!!! LIVE MODE — REAL CHANGES WILL BE MADE TO JIRA !!!")
+        log.info("!!! LIVE MODE — REAL CHANGES WILL BE MADE TO JIRA !!!")
+        log.info("!!! LIVE MODE — REAL CHANGES WILL BE MADE TO JIRA !!!")
     log.info("=" * 60)
 
     tickets = fetch_open_tickets()
@@ -265,49 +269,60 @@ def run():
         summary = issue["fields"].get("summary", "")
         reporter = (issue["fields"].get("reporter") or {}).get("emailAddress", "")
 
-        category, confidence, action = classify(summary, reporter)
+        try:
+            category, confidence, action = classify(summary, reporter)
+        except Exception as e:
+            log.warning(f"  classify error on {key}: {e}")
+            continue
 
         log.info(f"{key} | {category} ({confidence:.0%}) | {action} | {summary[:80]}")
 
-        if action == "dismiss":
-            if DRY_RUN:
-                log.info(f"  [DRY RUN] Would close {key} as Fixed")
-                result = "dry_run"
-                stats["dismiss"] += 1
-            else:
-                success = close_ticket(key, FIXED_RESOLUTION_ID)
-                result  = "closed" if success else "error"
-                if not success:
-                    stats["error"] += 1
-                else:
+        result = "error"
+        try:
+            if action == "dismiss":
+                if DRY_RUN:
+                    log.info(f"  [DRY RUN] Would close {key} as Fixed")
+                    result = "dry_run"
                     stats["dismiss"] += 1
-
-        elif action == "close_wontdo":
-            if DRY_RUN:
-                log.info(f"  [DRY RUN] Would close {key} as Won't Do")
-                result = "dry_run"
-                stats["close_wontdo"] += 1
-            else:
-                success = close_ticket(key, WONTDO_RESOLUTION_ID)
-                result  = "closed_wontdo" if success else "error"
-                if not success:
-                    stats["error"] += 1
                 else:
+                    success = close_ticket(key, FIXED_RESOLUTION_ID)
+                    result  = "closed" if success else "error"
+                    if not success:
+                        stats["error"] += 1
+                    else:
+                        stats["dismiss"] += 1
+
+            elif action == "close_wontdo":
+                if DRY_RUN:
+                    log.info(f"  [DRY RUN] Would close {key} as Won't Do")
+                    result = "dry_run"
                     stats["close_wontdo"] += 1
-
-        else:  # human_review
-            if DRY_RUN:
-                log.info(f"  [DRY RUN] Would flag {key} for human review")
-                result = "dry_run"
-                stats["human_review"] += 1
-            else:
-                note    = f"Classified as '{category}' (confidence {confidence:.0%}) — awaiting human action."
-                success = add_internal_comment(key, note)
-                result  = "flagged" if success else "error"
-                if not success:
-                    stats["error"] += 1
                 else:
+                    success = close_ticket(key, WONTDO_RESOLUTION_ID)
+                    result  = "closed_wontdo" if success else "error"
+                    if not success:
+                        stats["error"] += 1
+                    else:
+                        stats["close_wontdo"] += 1
+
+            else:  # human_review
+                if DRY_RUN:
+                    log.info(f"  [DRY RUN] Would flag {key} for human review")
+                    result = "dry_run"
                     stats["human_review"] += 1
+                else:
+                    note    = f"Classified as '{category}' (confidence {confidence:.0%}) — awaiting human action."
+                    success = add_internal_comment(key, note)
+                    result  = "flagged" if success else "error"
+                    if not success:
+                        stats["error"] += 1
+                    else:
+                        stats["human_review"] += 1
+
+        except PermissionError as e:
+            log.error(str(e))
+            log.error("FATAL: Write attempted in dry-run mode. Aborting run immediately.")
+            sys.exit(2)
 
         audit(key, summary, category, confidence, action, result)
 
