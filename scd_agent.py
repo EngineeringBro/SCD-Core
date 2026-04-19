@@ -2,6 +2,9 @@
 SCD Core Agent v0.1
 Autonomous Jira support ticket classifier and resolver.
 Fetches open SCD tickets, classifies them, and takes action.
+
+DRY_RUN = True  →  No changes made to Jira. All actions are logged only.
+DRY_RUN = False →  Live mode. Agent will post comments and close tickets.
 """
 
 import json
@@ -26,7 +29,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("scd-core")
 
-# ─── Auth ─────────────────────────────────────────────────────────────────────
+# ─── Dry Run Mode ─────────────────────────────────────────────────────────────
+# Set to False only when Hussein explicitly approves live execution.
+DRY_RUN = True
 
 JIRA_EMAIL    = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN    = os.environ["JIRA_API_TOKEN"]
@@ -220,6 +225,8 @@ def fetch_open_tickets() -> list[dict]:
 def run():
     log.info("=" * 60)
     log.info(f"SCD Core Agent starting — {datetime.now(timezone.utc).isoformat()}")
+    if DRY_RUN:
+        log.info("*** DRY RUN MODE — No changes will be made to Jira ***")
     log.info("=" * 60)
 
     tickets = fetch_open_tickets()
@@ -237,29 +244,41 @@ def run():
         log.info(f"{key} | {category} ({confidence:.0%}) | {action} | {summary[:80]}")
 
         if action == "dismiss":
-            success = close_ticket(key, FIXED_RESOLUTION_ID)
-            result  = "closed" if success else "error"
-            if not success:
-                stats["error"] += 1
+            if DRY_RUN:
+                log.info(f"  [DRY RUN] Would close {key} as Fixed")
+                result = "dry_run"
             else:
-                stats["dismiss"] += 1
+                success = close_ticket(key, FIXED_RESOLUTION_ID)
+                result  = "closed" if success else "error"
+                if not success:
+                    stats["error"] += 1
+                else:
+                    stats["dismiss"] += 1
 
         elif action == "close_wontdo":
-            success = close_ticket(key, WONTDO_RESOLUTION_ID)
-            result  = "closed_wontdo" if success else "error"
-            if not success:
-                stats["error"] += 1
+            if DRY_RUN:
+                log.info(f"  [DRY RUN] Would close {key} as Won't Do")
+                result = "dry_run"
             else:
-                stats["close_wontdo"] += 1
+                success = close_ticket(key, WONTDO_RESOLUTION_ID)
+                result  = "closed_wontdo" if success else "error"
+                if not success:
+                    stats["error"] += 1
+                else:
+                    stats["close_wontdo"] += 1
 
         else:  # human_review
-            note    = f"Classified as '{category}' (confidence {confidence:.0%}) — awaiting human action."
-            success = add_internal_comment(key, note)
-            result  = "flagged" if success else "error"
-            if not success:
-                stats["error"] += 1
+            if DRY_RUN:
+                log.info(f"  [DRY RUN] Would flag {key} for human review")
+                result = "dry_run"
             else:
-                stats["human_review"] += 1
+                note    = f"Classified as '{category}' (confidence {confidence:.0%}) — awaiting human action."
+                success = add_internal_comment(key, note)
+                result  = "flagged" if success else "error"
+                if not success:
+                    stats["error"] += 1
+                else:
+                    stats["human_review"] += 1
 
         audit(key, summary, category, confidence, action, result)
 
