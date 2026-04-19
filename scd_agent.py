@@ -21,10 +21,19 @@ import base64
 import os
 import re
 import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import request, error
 from urllib.parse import urlencode
+
+# ─── Execution Environment Guard ──────────────────────────────────────────────
+# This agent is only permitted to run inside GitHub Actions.
+# Local execution is permanently disabled — no exceptions.
+if os.environ.get("GITHUB_ACTIONS") != "true":
+    print("[BLOCKED] This agent can only run inside GitHub Actions.")
+    print("[BLOCKED] Local execution is disabled. Push to the repository and trigger from GitHub.")
+    sys.exit(1)
 
 # ─── Logging Setup ────────────────────────────────────────────────────────────
 
