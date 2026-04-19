@@ -86,6 +86,7 @@ RULES = [
     (r"welcome to repairq",                              "onboarding_auto",  0.99, "dismiss"),
     (r"notify of the tasks completed",                   "task_auto",        0.99, "dismiss"),
     (r"there was an error in the sqs process",           "sqs_error",        0.99, "dismiss"),
+    (r"scheduledproccess.*ctsi.import|ctsi.*import.*fail", "ctsi_batch",       0.99, "dismiss"),
     (r"notification of payment received",                "payment_auto",     0.99, "dismiss"),
     (r"problem billing your credit card",                "billing_auto",     0.95, "human_review"),
 
@@ -99,15 +100,15 @@ RULES = [
 
     # Real issues — human review until confidence is high
     (r"orphan",                                          "orphaned_tx",      0.90, "human_review"),
-    (r"close ticket|close claim|close irp",              "ticket_status",    0.85, "human_review"),
+    (r"close.{0,10}ticket|close.{0,10}claim|close.{0,10}irp|closing.*ticket|can.t close|cannot close|ticket.*not clos|tickets need closed|close repair|close.*duplicate|mark.*ticket.*(close|reject)", "ticket_status", 0.85, "human_review"),
     (r"reopen|re-open",                                  "ticket_status",    0.85, "human_review"),
-    (r"balance and close",                               "ticket_status",    0.85, "human_review"),
-    (r"force close",                                     "ticket_status",    0.85, "human_review"),
+    (r"balance and close|force close",                   "ticket_status",    0.85, "human_review"),
     (r"cancel claim|reject claim|decline claim",         "asurion_claim",    0.85, "human_review"),
-    (r"google.*(claim|in.warranty|not authoris)",        "google_claim",     0.85, "human_review"),
+    (r"google.*(claim|in.warranty|in-warranty|\biw\b|not authoris)", "google_claim", 0.85, "human_review"),
     (r"purchase order|reopen.*po|po.*reopen",            "parts_order",      0.85, "human_review"),
     (r"duplicate.*transaction|orphaned payment",         "duplicate_tx",     0.85, "human_review"),
-    (r"cannot log|can't log|password|reset pin",         "cannot_login",     0.85, "human_review"),
+    (r"cannot log|can.t log|password|reset pin|login issue|login problem|\blogin\b|ip permission", "cannot_login", 0.85, "human_review"),
+    (r"\bimei\b",                                        "imei_update",      0.85, "human_review"),
     (r"print(ing)?.*fail|receipt.*print",                "printing",         0.80, "human_review"),
     (r"slow|gateway timeout|timed out",                  "slow_perf",        0.75, "human_review"),
     (r"http 500|internal server error",                  "api_error",        0.80, "human_review"),
@@ -247,6 +248,7 @@ def run():
             if DRY_RUN:
                 log.info(f"  [DRY RUN] Would close {key} as Fixed")
                 result = "dry_run"
+                stats["dismiss"] += 1
             else:
                 success = close_ticket(key, FIXED_RESOLUTION_ID)
                 result  = "closed" if success else "error"
@@ -259,6 +261,7 @@ def run():
             if DRY_RUN:
                 log.info(f"  [DRY RUN] Would close {key} as Won't Do")
                 result = "dry_run"
+                stats["close_wontdo"] += 1
             else:
                 success = close_ticket(key, WONTDO_RESOLUTION_ID)
                 result  = "closed_wontdo" if success else "error"
@@ -271,6 +274,7 @@ def run():
             if DRY_RUN:
                 log.info(f"  [DRY RUN] Would flag {key} for human review")
                 result = "dry_run"
+                stats["human_review"] += 1
             else:
                 note    = f"Classified as '{category}' (confidence {confidence:.0%}) — awaiting human action."
                 success = add_internal_comment(key, note)
