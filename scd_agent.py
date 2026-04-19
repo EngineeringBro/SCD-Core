@@ -30,9 +30,13 @@ logging.basicConfig(
 log = logging.getLogger("scd-core")
 
 # ─── Dry Run Mode ─────────────────────────────────────────────────────────────
-# Controlled by GitHub Secret LIVE_MODE. Default is ALWAYS dry-run.
-# To enable live execution: set GitHub Secret LIVE_MODE=true (requires repo admin access).
-DRY_RUN = os.environ.get("LIVE_MODE", "false").strip().lower() != "true"
+# To go live: manually trigger the workflow in GitHub Actions and type the
+# passphrase in the input field. The passphrase must match the LIVE_PASSPHRASE
+# GitHub Secret. Scheduled (cron) runs are ALWAYS dry-run — they cannot supply
+# a passphrase so they can never take live action.
+_passphrase_input  = os.environ.get("LIVE_PASSPHRASE_INPUT", "").strip()
+_passphrase_secret = os.environ.get("LIVE_PASSPHRASE_SECRET", "").strip()
+DRY_RUN = not (_passphrase_secret and _passphrase_input == _passphrase_secret)
 
 JIRA_EMAIL    = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN    = os.environ["JIRA_API_TOKEN"]
