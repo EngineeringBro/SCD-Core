@@ -1,5 +1,76 @@
 # SCD Core
 
+Autonomous support queue agent for ServiceCentral. Processes SCD tickets through a 4-brain pipeline with mandatory human approval before any write action.
+
+## Architecture
+
+```
+Scan → Route → Module (Brain 1) → Gatekeeper (Brain 2, pure Python)
+→ Validator (Brain 3, GPT) → GitHub Issue (proposal) → Human approves
+→ Executor (Brain 4, pure Python, write creds injected only after approval)
+```
+
+## Key Design Principles
+
+- **No autonomous execution.** Every write requires human approval via GitHub Environment gate.
+- **Write credentials** exist only in the `scd-execute` GitHub Environment. They are never injected until you click Approve.
+- **JiraReadClient / JiraWriteClient** are strictly separated in code. Investigation jobs only import the read client.
+- **Modules are self-contained** problem-solvers. Adding a new ticket type = drop a new module folder + one routing rule.
+- **Knowledge ingestion** is build-time only. Coworker agents go in `modules/<name>/ingestion/pending/`, are ingested into `modules/<name>/learned/`, then the module is self-contained at runtime.
+- **Version snapshots** freeze `learned/` before every bump. Roll back any version with one command.
+
+## Workflows
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `scd-core-run.yml` | Manual only | Scan → Route → Module → Gatekeeper → Validator → Post GitHub Issue proposals |
+| `scd-core-execute.yml` | Manual only + Environment approval | Re-validate → Execute approved proposal → Commit logs |
+
+## Modules
+
+| Module | Category | Actions |
+|--------|----------|---------|
+| `spam` | Spam tickets | Dismiss + close |
+| `revv_errors` | Revv sync errors | Log to notifications/revv-reports.md + close |
+| `auto_notifications` | Automatic notifications | Log + close |
+| `orphaned_transactions` | Transaction errors | SQL fix + rollback + Jira comment + resolve |
+| `general` | Everything else | RAG pipeline: retriever → reranker → synthesizer |
+
+## Secrets Required
+
+**Repo-level** (available to all jobs):
+- `JIRA_TOKEN` — full Jira API token (read + write; code restricts to read in investigation jobs)
+- `JIRA_EMAIL`
+- `JIRA_BASE_URL`
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `PROPOSAL_HMAC_KEY` — for signing proposals between brains
+- `GITHUB_TOKEN` — auto-provided by GitHub Actions
+
+**`scd-execute` Environment only** (injected only after approval):
+- Same `JIRA_TOKEN` — this is where the write client credential lives
+- Required reviewer: Hussein Shaib
+
+> Note: Until service accounts are provisioned, the same token is used for both read and write.
+> The code-level client split (JiraReadClient/JiraWriteClient) enforces the boundary.
+> Future: swap to separate read-only and write-only tokens when available.
+
+## Adding a New Module
+
+1. `mkdir modules/<name>/`
+2. Create `module.py` implementing the `Module` base class
+3. Create `profile.yaml` (for notification-style modules) or `learned/` folder
+4. Add routing rule in `configs/module_registry.yaml`
+5. Add tests in `modules/<name>/tests/`
+
+See `docs/adding_a_module.md` for the full recipe.
+
+## Rolling Back a Module Version
+
+```bash
+python -m core.ingestor --rollback --module orphaned_transactions --to-version 1.4.0
+```
+
 > Autonomous AI agent that monitors, classifies, and resolves a live Jira support queue in real-time — built with Python, GitHub Actions CI/CD, and the Jira REST API. Trained on 50,000+ historical tickets.
 
 ## What It Does

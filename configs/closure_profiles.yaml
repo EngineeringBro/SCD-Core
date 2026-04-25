@@ -1,0 +1,54 @@
+profiles:
+
+  spam:
+    log_file: null
+    actions:
+      - type: jira_field_update
+        field: customfield_10170
+        value_id: "10438"
+      - type: jira_transition
+        to: "Closed"
+        resolution: "Dismissed"
+    log_columns: []
+
+  revv_errors:
+    log_file: revv-reports
+    actions:
+      - type: jira_field_update
+        field: customfield_10170
+        value_id: "10494"
+      - type: jira_field_update
+        field: customfield_10201
+        value_id: "10499"   # Integration or Sync Error
+      - type: jira_internal_comment
+        body_template: "Auto-closed Revv error notification. No customer impact."
+      - type: jira_transition
+        to: "Closed"
+        resolution: "Known Error"
+    log_columns: [closed_at, ticket, client, summary]
+
+  auto_notifications:
+    log_file: automatic-notifications
+    actions:
+      - type: jira_field_update
+        field: customfield_10170
+        value_id: "10404"
+      - type: jira_internal_comment
+        body_template: "Auto-closed automatic notification."
+      - type: jira_transition
+        to: "Closed"
+        resolution: "Dismissed"
+    log_columns: [closed_at, ticket, client, summary]
+
+  ringcentral:
+    log_file: ringcentral
+    actions:
+      - type: jira_field_update
+        field: customfield_10170
+        value_id: "10496"
+      - type: jira_internal_comment
+        body_template: "Auto-closed RingCentral alert."
+      - type: jira_transition
+        to: "Closed"
+        resolution: "Dismissed"
+    log_columns: [closed_at, ticket, summary]

@@ -1,0 +1,28 @@
+modules:
+  # --- NOTIFICATION MODULES (deterministic, profile-based) ---
+
+  - module: spam
+    description: Spam and junk tickets
+    topic_field_ids: [10438]
+    keywords: []
+
+  - module: revv_errors
+    description: Automated Revv sync error reports
+    topic_field_ids: [10494]
+    keywords: ["revv error", "revv sync"]
+
+  - module: auto_notifications
+    description: Automated system notifications (non-Revv)
+    topic_field_ids: [10404, 10496]
+    keywords: ["ringcentral", "ring central", "automatic notification"]
+
+  # --- RESOLUTION MODULES ---
+
+  - module: orphaned_transactions
+    description: Orphaned / stuck payment transactions
+    topic_field_ids: [10446]
+    keywords: ["orphaned transaction", "orphan transaction", "stuck transaction",
+               "transaction not linked", "missing transaction"]
+
+  # General is the fallback — no routing rules needed, router falls through to it
+  # - module: general

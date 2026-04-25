@@ -1,0 +1,76 @@
+name: SCD Core - Execute Approved Proposal
+
+# MANUAL ONLY. Triggered only after you review and approve a proposal Issue.
+# Requires approval from the scd-execute GitHub Environment before secrets are injected.
+on:
+  workflow_dispatch:
+    inputs:
+      proposal_issue_number:
+        description: 'GitHub Issue number of the approved proposal (e.g. 42)'
+        required: true
+      ticket_id:
+        description: 'Jira ticket ID (e.g. SCD-141831) — must match the proposal'
+        required: true
+
+jobs:
+  execute:
+    name: Execute Approved Actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: scd-execute
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Re-validate proposal before executing
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
+        run: |
+          python -m core.executor \
+            --mode revalidate \
+            --issue ${{ github.event.inputs.proposal_issue_number }} \
+            --ticket ${{ github.event.inputs.ticket_id }}
+
+      - name: Execute approved actions
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
+        run: |
+          python -m core.executor \
+            --mode execute \
+            --issue ${{ github.event.inputs.proposal_issue_number }} \
+            --ticket ${{ github.event.inputs.ticket_id }}
+
+      - name: Commit notification logs and state
+        run: |
+          git config user.name "scd-core[bot]"
+          git config user.email "scd-core@users.noreply.github.com"
+          git add notifications/ state/
+          git diff --cached --quiet || git commit -m "state: post-execution update for ${{ github.event.inputs.ticket_id }}"
+          git push
+
+      - name: Upload execution trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exec-trace-${{ github.run_number }}
+          path: run_trace.json
+          retention-days: 90

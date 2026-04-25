@@ -1,0 +1,98 @@
+name: SCD Core — Scan & Propose
+
+# MANUAL ONLY — no cron, no automatic triggers.
+# Run from: GitHub Actions tab → "Run workflow"
+on:
+  workflow_dispatch:
+    inputs:
+      scope_note:
+        description: 'Optional: note about this scan (for audit log)'
+        required: false
+        default: 'manual scan'
+
+jobs:
+  scan:
+    name: Scan & Route
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tickets_found: ${{ steps.scan.outputs.tickets_found }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Run scanner
+        id: scan
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+        run: python -m core.orchestrator --mode scan
+
+      - name: Upload run trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-trace-${{ github.run_number }}
+          path: run_trace.json
+          retention-days: 90
+
+  investigate:
+    name: Investigate & Propose
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Download scan results
+        uses: actions/download-artifact@v4
+        with:
+          name: run-trace-${{ github.run_number }}
+
+      - name: Run modules + gatekeeper + validator → post proposals
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: python -m core.orchestrator --mode propose
+
+      - name: Commit updated scan state
+        run: |
+          git config user.name "scd-core[bot]"
+          git config user.email "scd-core@users.noreply.github.com"
+          git add state/scan-state.json
+          git diff --cached --quiet || git commit -m "state: update scan-state after run #${{ github.run_number }}"
+          git push
+
+      - name: Upload run trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-trace-${{ github.run_number }}
+          path: run_trace.json
+          retention-days: 90

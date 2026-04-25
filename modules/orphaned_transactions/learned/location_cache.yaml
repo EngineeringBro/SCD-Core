@@ -1,0 +1,39 @@
+# Mobile Klinik location cache
+# Source: orphaned-transaction-agent-v1.1.md
+# Format: location_name -> {loc_id, terminal_id, gp_payment_method_id}
+
+locations:
+  "Mobile Klinik McAllister (501)":
+    loc_id: 35
+    terminal_id: 58
+    gp_payment_method_id: 288
+
+  "Mobile Klinik SevenOaks (806)":
+    loc_id: 74
+    terminal_id: 98
+    gp_payment_method_id: 343
+
+  "Mobile Klinik Orchard Park (802)":
+    loc_id: 49
+    terminal_id: 72
+    gp_payment_method_id: 486
+
+  "Mobile Klinik Bayshore (110)":
+    loc_id: 15
+    terminal_id: 19
+    gp_payment_method_id: 333
+
+  "Mobile Klinik Avalon Mall (600)":
+    loc_id: 36
+    terminal_id: 59
+    gp_payment_method_id: 223
+
+  "Mobile Klinik Masonville Place (142)":
+    loc_id: 75
+    terminal_id: 99
+    gp_payment_method_id: 213
+
+  "Mobile Klinik Southgate (309)":
+    loc_id: 24
+    terminal_id: 47
+    gp_payment_method_id: 477

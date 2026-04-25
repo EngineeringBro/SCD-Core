@@ -1,0 +1,10 @@
+current_version: "1.1.0"
+changelog:
+  "1.1.0":
+    date: 2026-04-25
+    changes:
+      - Initial port of orphaned-transaction-agent-v1.1 into SCD Core module architecture
+      - Browser-based resolution logic preserved in learned/agent_logic.md as reference
+      - SQL template extracted from v1.1 step 9 combined script
+      - Location cache from v1.1 imported into learned/location_cache.yaml
+    source: orphaned-transaction-agent-v1.1.md

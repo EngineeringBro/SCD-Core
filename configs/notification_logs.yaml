@@ -1,0 +1,25 @@
+logs:
+  revv-reports:
+    file: notifications/revv-reports.md
+    columns: [closed_at, ticket, client, summary]
+    description: Closed Revv sync error notifications
+
+  asurion:
+    file: notifications/asurion.md
+    columns: [closed_at, ticket, client, claim_id, summary]
+    description: Closed Asurion claim notifications
+
+  ringcentral:
+    file: notifications/ringcentral.md
+    columns: [closed_at, ticket, summary]
+    description: Closed RingCentral missed-call/voicemail tickets
+
+  automatic-notifications:
+    file: notifications/automatic-notifications.md
+    columns: [closed_at, ticket, client, summary]
+    description: Other automated notifications
+
+  unrouted:
+    file: notifications/unrouted.md
+    columns: [seen_at, ticket, topic_field, subject]
+    description: Tickets that did not match any module — evidence base for new modules

@@ -1,0 +1,73 @@
+# Known Jira field IDs and allowed values for SCD project
+# Used by gatekeeper for field_update validation
+
+fields:
+
+  customfield_10170:
+    name: Topic Field
+    type: single_select
+    options:
+      10446: Transaction Errors
+      10361: Claims
+      10354: Billing
+      10414: Printing
+      10439: Square Integration
+      10390: Heartland
+      10352: Asurion
+      10404: Automatic Notifications
+      10495: Azure Notification
+      10413: Pricing Increase
+      10427: RMAs
+      10469: Re - Open Ticket
+      10494: Revv Error Report
+      10434: Settings & Configuration Questions
+      10438: Spam
+      10443: Ticket/Device Update
+      10496: Ring Central Alert
+
+  customfield_10201:
+    name: Root Cause
+    type: single_select
+    options:
+      10497: User Behavior or Input Error
+      10498: Config or Workflow Discrepancy
+      10499: Integration or Sync Error
+      10500: Software Bug
+      10501: Unknown
+      10764: Infrastructure
+
+  customfield_10158:
+    name: Product
+    type: multi_select
+    options:
+      10336: RepairQ OTS
+      10340: RepairQ Enterprise
+      10334: ServiceManager
+      10335: ServiceNetwork
+
+  customfield_10143:
+    name: Type of Work
+    type: single_select
+    options: {}  # populate from scan_fields.py output
+
+  customfield_10186:
+    name: Support Level
+    type: single_select
+    options: {}
+
+  customfield_10036:
+    name: Severity Level
+    type: single_select
+    options: {}
+
+transitions:
+  resolve: "81"
+  close: "71"
+
+resolutions:
+  fixed: "10000"         # Fixed / Completed
+  dismissed: "10001"     # Dismissed
+  duplicate: "10002"
+  known_error: "10003"
+  done: "10004"
+  works_as_designed: "10005"
