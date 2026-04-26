@@ -1,14 +1,17 @@
 """
 build_ticket_cache.py — fetch ALL closed SCD tickets with full comments
-and write to knowledge/tickets_cache.jsonl.gz
+and write to knowledge/tickets_cache_{year}.jsonl.gz
 
 Usage:
-    python scripts/build_ticket_cache.py            # full build
-    python scripts/build_ticket_cache.py --resume   # continue from last checkpoint
+    python scripts/build_ticket_cache.py --year 2025
+    python scripts/build_ticket_cache.py --year 2026
+
+Environment variables:
+    CACHE_YEAR           override --year (used by GitHub Actions)
+    MAX_CACHE_TICKETS    cap tickets per run (0 = unlimited, default 0)
 
 Writes:
-    knowledge/tickets_cache.jsonl.gz   gzip-compressed JSONL, one ticket per line
-    knowledge/cache_progress.json      checkpoint; deleted on successful completion
+    knowledge/tickets_cache_{year}.jsonl.gz   one file per year
 
 Each JSONL line:
     {
@@ -22,19 +25,22 @@ Each JSONL line:
         "status": "Closed",
         "issuetype": "Support",
         "assignee": "John Smith",
+        "assignee_email": "john@servicecentral.com",
         "reporter": "Jane Doe",
+        "reporter_email": "jane@client.com",
+        "priority": "2 - High",
         "product": "RepairQ Enterprise",
         "org": "Mobile Klinik",
         "support_level": "L2",
-        "severity": "Medium",
-        "type_of_work": "Bug Fix",
+        "severity": "Sev 3",
+        "type_of_work": "Support",
         "labels": ["printing", "mk"],
         "timespent": 3600,             # seconds logged on ticket (null if none)
-        "repairq_link": "https://mobileklinik.repairq.io/ticket/2848448",  # RepairQ ticket URL if set
+        "repairq_link": "https://mobileklinik.repairq.io/ticket/2848448",
         "created": "2025-01-15T10:00:00.000+0000",
         "updated": "2025-01-16T08:30:00.000+0000",
         "comments": [
-            {"author": "John Smith", "created": "2025-01-15T11:00:00.000+0000", "internal": false, "body": "..."}  # max 1500 chars; internal=true means agent-only note
+            {"author": "John Smith", "created": "2025-01-15T11:00:00.000+0000", "internal": false, "body": "..."}  # max 10000 chars; internal=true means agent-only note
         ],
         "cached_at": "2026-04-26T..."
     }
@@ -60,9 +66,16 @@ PAGE_SIZE         = 100       # tickets per JQL page (Jira max = 100)
 RATE_DELAY        = 0.15      # seconds between page requests (avoids rate limiting)
 MAX_DESC_CHARS    = 2000      # truncate description text
 MAX_COMMENT_CHARS = 10000     # truncate each comment body (captures full resolutions)
-CHECKPOINT_EVERY  = 500      # save checkpoint every N tickets processed
-MAX_TICKETS       = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unlimited
-JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
+MAX_TICKETS       = int(os.environ.get("MAX_CACHE_TICKETS", "0"))  # 0 = unlimited
+
+# Year to cache — set via --year arg or CACHE_YEAR env var
+# JQL filters by created date for that calendar year
+def _year_jql(year: int) -> str:
+    return (
+        f'project = SCD AND resolution is not EMPTY '
+        f'AND created >= "{year}-01-01" AND created <= "{year}-12-31" '
+        f'ORDER BY created ASC'
+    )
 
 FIELDS = [
     "summary", "description", "resolution", "resolutiondate", "status", "issuetype",
@@ -79,16 +92,16 @@ FIELDS = [
     "customfield_10033",   # Reporter email (as submitted via portal)
 ]
 
-OUTPUT_FILE     = Path("knowledge/tickets_cache.jsonl.gz")
+OUTPUT_FILE     = Path("knowledge/tickets_cache.jsonl.gz")  # overridden per year in main()
 PROGRESS_FILE   = Path("knowledge/cache_progress.json")
 
 
 # ── Jira helpers ───────────────────────────────────────────────────────────────
 
-def _fetch_page(jira: JiraReadClient, next_page_token: str | None, page_size: int) -> tuple[list[dict], str | None]:
+def _fetch_page(jira: JiraReadClient, jql: str, next_page_token: str | None, page_size: int) -> tuple[list[dict], str | None]:
     """Fetch one page. Returns (issues, next_page_token). next_page_token=None means last page."""
     payload: dict = {
-        "jql":        JQL,
+        "jql":        jql,
         "maxResults": page_size,
         "fields":     FIELDS,
     }
@@ -209,29 +222,34 @@ def _save_progress(start_at: int, written: int, total: int) -> None:
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build SCD ticket cache")
-    parser.add_argument("--resume", action="store_true",
-                        help="Note: resume not supported with cursor pagination — starts fresh")
+    parser = argparse.ArgumentParser(description="Build SCD ticket cache for a given year")
+    parser.add_argument("--year", type=int,
+                        default=int(os.environ.get("CACHE_YEAR", datetime.now().year)),
+                        help="Calendar year to cache (default: current year)")
     args = parser.parse_args()
+    year = args.year
+
+    jql = _year_jql(year)
+    output_file = Path(f"knowledge/tickets_cache_{year}.jsonl.gz")
 
     jira = JiraReadClient()
-
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     cap = MAX_TICKETS if MAX_TICKETS > 0 else 999_999
-    print(f"[cache] Fetching up to {cap:,} closed SCD tickets (cursor pagination)")
+    print(f"[cache] Year {year} — fetching up to {cap:,} closed SCD tickets")
+    print(f"[cache] JQL: {jql}")
+    print(f"[cache] Output: {output_file}")
 
     written        = 0
     errors         = 0
     next_token: str | None = None
     start_time     = time.time()
-    file_mode      = "wb"
 
-    with gzip.open(OUTPUT_FILE, file_mode) as gz:
+    with gzip.open(output_file, "wb") as gz:
         while written < cap:
             page_size = min(PAGE_SIZE, cap - written)
             try:
-                issues, next_token = _fetch_page(jira, next_token, page_size)
+                issues, next_token = _fetch_page(jira, jql, next_token, page_size)
             except Exception as exc:
                 print(f"  [error] Page failed: {exc}")
                 errors += 1
@@ -263,8 +281,8 @@ def main() -> None:
             time.sleep(RATE_DELAY)
 
     elapsed_total = time.time() - start_time
-    size_mb = OUTPUT_FILE.stat().st_size / (1024 * 1024)
-    print(f"\n[cache] Done. {written:,} tickets written to {OUTPUT_FILE}")
+    size_mb = output_file.stat().st_size / (1024 * 1024)
+    print(f"\n[cache] Done. {written:,} tickets written to {output_file}")
     print(f"[cache] File size: {size_mb:.1f} MB (compressed)")
     print(f"[cache] Total time: {elapsed_total/60:.1f} minutes")
 

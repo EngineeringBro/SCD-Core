@@ -1,6 +1,8 @@
 # State file is written by GitHub Actions — always prefer the remote version during merges
 state/scan-state.json merge=ours
 
-# Ticket cache: binary gzip file — no diffs, prefer remote version on merge
+# Ticket cache: binary gzip files — no diffs, prefer remote version on merge
 knowledge/tickets_cache.jsonl.gz binary
 knowledge/tickets_cache.jsonl.gz merge=ours
+knowledge/tickets_cache_*.jsonl.gz binary
+knowledge/tickets_cache_*.jsonl.gz merge=ours

@@ -121,84 +121,91 @@ def retrieve(ticket: dict, jira) -> list[Candidate]:
     return candidates[:50]
 
 
-_CACHE_PATH = Path("knowledge/tickets_cache.jsonl.gz")
+_CACHE_DIR = Path("knowledge")
 
 
 def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
     """
-    Search the local gzip JSONL cache for tickets matching keywords.
-    Returns up to 30 candidates. Returns [] if cache doesn't exist yet.
+    Search all yearly gzip JSONL cache files for tickets matching keywords.
+    Reads knowledge/tickets_cache_YYYY.jsonl.gz (newest years first for recency bias).
+    Returns up to 30 candidates. Returns [] if no cache files exist yet.
     """
-    if not _CACHE_PATH.exists():
+    import glob as _glob
+    cache_files = sorted(
+        _glob.glob(str(_CACHE_DIR / "tickets_cache_*.jsonl.gz")),
+        reverse=True,  # newest year first → more recent tickets ranked higher on ties
+    )
+    if not cache_files:
         return []
 
     kw_set = {k.lower() for k in keywords}
     matches: list[Candidate] = []
 
-    with gzip.open(_CACHE_PATH, "rt", encoding="utf-8") as gz:
-        for line in gz:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+    for cache_file in cache_files:
+        with gzip.open(cache_file, "rt", encoding="utf-8") as gz:
+            for line in gz:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-            key = rec.get("key", "")
-            if key == exclude_key:
-                continue
+                key = rec.get("key", "")
+                if key == exclude_key:
+                    continue
 
-            # Score: count keyword hits across searchable fields
-            searchable = " ".join([
-                rec.get("summary", ""),
-                rec.get("description", ""),
-                rec.get("topic", ""),
-                rec.get("resolution", ""),
-                rec.get("type_of_work", ""),
-                " ".join(
-                    (c["body"] if isinstance(c, dict) else c)
-                    for c in rec.get("comments", [])
-                ),
-            ]).lower()
+                # Score: count keyword hits across searchable fields
+                searchable = " ".join([
+                    rec.get("summary", ""),
+                    rec.get("description", ""),
+                    rec.get("topic", ""),
+                    rec.get("resolution", ""),
+                    rec.get("type_of_work", ""),
+                    " ".join(
+                        (c["body"] if isinstance(c, dict) else c)
+                        for c in rec.get("comments", [])
+                    ),
+                ]).lower()
 
-            hits = sum(1 for kw in kw_set if kw in searchable)
-            if hits == 0:
-                continue
+                hits = sum(1 for kw in kw_set if kw in searchable)
+                if hits == 0:
+                    continue
 
-            # Build a rich body: description + resolution + last 5 comments,
-            # marking internal (agent-only) notes clearly so the LLM knows
-            # which are resolution steps vs customer messages.
-            comments = rec.get("comments", [])
-            comment_texts = []
-            for c in comments[-5:]:
-                if isinstance(c, dict):
-                    tag = "[INTERNAL]" if c.get("internal") else "[PUBLIC]"
-                    comment_texts.append(f"{tag} [{c.get('author', '?')}] {c.get('body', '')}")
-                else:
-                    comment_texts.append(c)
+                # Build a rich body: description + resolution + last 5 comments,
+                # marking internal (agent-only) notes clearly so the LLM knows
+                # which are resolution steps vs customer messages.
+                comments = rec.get("comments", [])
+                comment_texts = []
+                for c in comments[-5:]:
+                    if isinstance(c, dict):
+                        tag = "[INTERNAL]" if c.get("internal") else "[PUBLIC]"
+                        comment_texts.append(f"{tag} [{c.get('author', '?')}] {c.get('body', '')}")
+                    else:
+                        comment_texts.append(c)
 
-            body = (
-                f"Description: {rec.get('description', '')[:500]}\n"
-                f"Resolution: {rec.get('resolution', '')}\n"
-                f"Type of work: {rec.get('type_of_work', '')}\n"
-                f"Assignee: {rec.get('assignee', '')}\n"
-                f"Comments: {' | '.join(comment_texts)}"
-            )
+                body = (
+                    f"Description: {rec.get('description', '')[:500]}\n"
+                    f"Resolution: {rec.get('resolution', '')}\n"
+                    f"Type of work: {rec.get('type_of_work', '')}\n"
+                    f"Assignee: {rec.get('assignee', '')}\n"
+                    f"Comments: {' | '.join(comment_texts)}"
+                )
 
-            matches.append((hits, Candidate(
-                source="jira_closed",
-                ref_id=key,
-                title=rec.get("summary", ""),
-                body=body,
-                url=f"https://servicecentral.atlassian.net/browse/{key}",
-                metadata={
-                    "topic":      rec.get("topic", ""),
-                    "root_cause": rec.get("root_cause", ""),
-                    "resolution": rec.get("resolution", ""),
-                    "assignee":   rec.get("assignee", ""),
-                },
-            )))
+                matches.append((hits, Candidate(
+                    source="jira_closed",
+                    ref_id=key,
+                    title=rec.get("summary", ""),
+                    body=body,
+                    url=f"https://servicecentral.atlassian.net/browse/{key}",
+                    metadata={
+                        "topic":      rec.get("topic", ""),
+                        "root_cause": rec.get("root_cause", ""),
+                        "resolution": rec.get("resolution", ""),
+                        "assignee":   rec.get("assignee", ""),
+                    },
+                )))
 
     # Sort by hit count descending, return top 30
     matches.sort(key=lambda x: x[0], reverse=True)

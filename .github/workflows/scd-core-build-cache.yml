@@ -3,23 +3,17 @@ name: "SCD Core — Build Ticket Cache"
 on:
   workflow_dispatch:
     inputs:
-      max_tickets:
-        description: "Max tickets to cache (0 = all, default 100)"
+      year:
+        description: "Year to cache (e.g. 2025) or 'all' to build 2020–current year"
         required: false
-        default: "100"
-      resume:
-        description: "Resume from last checkpoint?"
-        required: false
-        default: "false"
-        type: choice
-        options: ["false", "true"]
+        default: "all"
 
 jobs:
   build-cache:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # commit cache file back to main
+      contents: write   # commit cache files back to main
 
     steps:
       - name: Checkout
@@ -41,52 +35,65 @@ jobs:
           sys.path.insert(0, '.')
           from core.jira_clients import JiraReadClient
           j = JiraReadClient()
-          # Test 1: get_issue
           t = j.get_issue('SCD-141664', fields=['summary'])
           print('get_issue OK:', t['key'])
-          # Test 2: search with simple JQL
           issues = j.search('project = SCD AND resolution is not EMPTY ORDER BY updated DESC', fields=['summary'], max_results=1)
           print('search OK:', issues[0]['key'] if issues else 'no results')
           "
 
-      - name: Build ticket cache
+      - name: Build ticket cache (by year)
         env:
           JIRA_EMAIL:       ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN:   ${{ secrets.JIRA_API_TOKEN }}
           JIRA_BASE_URL:    ${{ secrets.JIRA_BASE_URL }}
-          MAX_CACHE_TICKETS: ${{ github.event.inputs.max_tickets }}
+          MAX_CACHE_TICKETS: "0"
         run: |
-          if [ "${{ github.event.inputs.resume }}" = "true" ]; then
-            python scripts/build_ticket_cache.py --resume
+          INPUT_YEAR="${{ github.event.inputs.year }}"
+          CURRENT_YEAR=$(date +%Y)
+
+          if [ "$INPUT_YEAR" = "all" ]; then
+            YEARS=$(seq 2020 $CURRENT_YEAR)
           else
-            python scripts/build_ticket_cache.py
+            YEARS="$INPUT_YEAR"
           fi
 
-      - name: Commit cache to repo
+          for YEAR in $YEARS; do
+            echo "=========================================="
+            echo "Building cache for year: $YEAR"
+            echo "=========================================="
+            CACHE_YEAR=$YEAR python scripts/build_ticket_cache.py
+          done
+
+      - name: Commit cache files to repo
         run: |
           git config user.name  "scd-core-bot"
           git config user.email "scd-core-bot@users.noreply.github.com"
-          git add knowledge/tickets_cache.jsonl.gz
-          git add knowledge/cache_progress.json 2>/dev/null || true
+          git add knowledge/tickets_cache_*.jsonl.gz
           if git diff --cached --quiet; then
             echo "Cache unchanged — nothing to commit."
           else
-            TICKET_COUNT=$(python -c "
-          import gzip, json
-          count = sum(1 for _ in gzip.open('knowledge/tickets_cache.jsonl.gz'))
-          print(count)
+            TOTAL=$(python -c "
+          import gzip, glob
+          total = 0
+          for f in glob.glob('knowledge/tickets_cache_*.jsonl.gz'):
+              total += sum(1 for _ in gzip.open(f))
+          print(total)
           ")
-            git commit -m "chore: update ticket cache [skip ci] — ${TICKET_COUNT} tickets"
+            git commit -m "chore: update ticket cache [skip ci] — ${TOTAL} tickets total"
             git push
           fi
 
       - name: Print summary
         run: |
           python -c "
-          import gzip, json, os
-          path = 'knowledge/tickets_cache.jsonl.gz'
-          count = sum(1 for _ in gzip.open(path))
-          size_mb = os.path.getsize(path) / (1024*1024)
-          print(f'Tickets in cache: {count:,}')
-          print(f'File size: {size_mb:.1f} MB (compressed)')
+          import gzip, glob, os
+          files = sorted(glob.glob('knowledge/tickets_cache_*.jsonl.gz'))
+          total = 0
+          for f in files:
+              count = sum(1 for _ in gzip.open(f))
+              size_mb = os.path.getsize(f) / (1024*1024)
+              print(f'{os.path.basename(f)}: {count:,} tickets, {size_mb:.1f} MB')
+              total += count
+          print(f'Total: {total:,} tickets across {len(files)} files')
           "
+
