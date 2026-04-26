@@ -1,18 +1,25 @@
 """
-General Module — fallback for tickets that don't match any specific module.
+General Module v2 — three-step CX pipeline for unrouted tickets.
 
-Logs the ticket to the unrouted notification log and produces a minimal
-ResolutionSuggestion with no actions (proposal requires human triage).
+Step 1 — cx_retriever : fetch 10-50 candidate reference cases from
+          closed SCD tickets and the JSM knowledge base
+Step 2 — cx_reranker  : BM25-rank candidates, select top 5
+Step 3 — cx_llm       : Claude Sonnet inspects top candidates and
+          produces the best possible ResolutionSuggestion
+
+Falls back to a minimal unrouted log entry if any step fails or if
+COPILOT_TOKEN is unavailable.
 """
 from __future__ import annotations
 from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
+from modules.general import core_cx_retriever, core_cx_reranker, core_cx_llm
 
 
 class GeneralModule(Module):
     name = "general"
-    version = "1.0.0"
+    version = "2.0.0"
 
     def matches(self, ticket: dict) -> bool:
         # General is always the fallback — router assigns it explicitly
@@ -27,6 +34,25 @@ class GeneralModule(Module):
         topic_id = str(topic.get("id", ""))
         topic_name = topic.get("value", "unknown")
 
+        # Step 1 — Retrieve candidates from closed tickets + KB
+        candidates = core_cx_retriever.retrieve(ticket, jira)
+
+        # Step 2 — BM25 rerank, keep top 5
+        top_candidates = core_cx_reranker.rerank(candidates, ticket, top_k=5) if candidates else []
+
+        # Step 3 — LLM judge
+        if top_candidates:
+            suggestion = core_cx_llm.judge(
+                ticket,
+                top_candidates,
+                module_name=self.name,
+                module_version=self.version,
+            )
+            if suggestion:
+                return suggestion
+
+        # Fallback — minimal suggestion with unrouted log
+        print("[general] CX pipeline produced no result — falling back to minimal suggestion")
         return ResolutionSuggestion(
             ticket_id=ticket_id,
             module=self.name,
@@ -61,5 +87,5 @@ class GeneralModule(Module):
                 ),
             ],
             module_confidence=0.0,
-            module_notes="General fallback — no module matched. Logged to unrouted.md for analysis.",
+            module_notes="General fallback — CX pipeline failed or no candidates found. Logged to unrouted for analysis.",
         )

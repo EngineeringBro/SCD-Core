@@ -1,0 +1,91 @@
+"""
+CX Reranker — Step 2 of the General Module pipeline.
+
+Scores Candidate objects against the incoming ticket using BM25.
+Pure stdlib — no external dependencies required.
+Returns the top_k highest-scoring candidates.
+"""
+from __future__ import annotations
+import math
+import re
+from modules.general.core_cx_retriever import Candidate
+
+# BM25 hyperparameters
+K1 = 1.5    # term frequency saturation
+B = 0.75    # length normalization
+
+_STOP_WORDS = {
+    "a", "an", "the", "is", "it", "in", "on", "at", "to", "for",
+    "of", "and", "or", "but", "not", "with", "this", "that", "was",
+    "are", "be", "have", "has", "had", "do", "does", "did", "will",
+    "would", "could", "should", "may", "might", "can", "i", "we",
+    "you", "he", "she", "they", "my", "our", "your", "their", "its",
+}
+
+
+def _tokenize(text: str) -> list[str]:
+    tokens = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    return [t for t in tokens if t not in _STOP_WORDS]
+
+
+def _query_tokens(ticket: dict) -> list[str]:
+    fields = ticket.get("fields", {})
+    summary = fields.get("summary", "")
+    topic = (fields.get("customfield_10170") or {}).get("value", "")
+    return _tokenize(f"{summary} {topic}")
+
+
+def rerank(candidates: list[Candidate], ticket: dict, top_k: int = 5) -> list[Candidate]:
+    """
+    BM25-score all candidates against the ticket, return top_k.
+    Falls back to candidates[:top_k] if corpus is too small to score.
+    """
+    if not candidates:
+        return []
+
+    query_terms = _query_tokens(ticket)
+    if not query_terms:
+        return candidates[:top_k]
+
+    # Tokenize all documents
+    doc_tokens: list[list[str]] = [_tokenize(f"{c.title} {c.body}") for c in candidates]
+    N = len(doc_tokens)
+    avgdl = sum(len(d) for d in doc_tokens) / N if N > 0 else 1
+
+    # IDF for each query term
+    idf: dict[str, float] = {}
+    for term in set(query_terms):
+        df = sum(1 for d in doc_tokens if term in d)
+        idf[term] = math.log((N - df + 0.5) / (df + 0.5) + 1)
+
+    # Score each candidate
+    scored: list[tuple[float, Candidate]] = []
+    for doc, candidate in zip(doc_tokens, candidates):
+        doc_len = len(doc)
+        tf_map: dict[str, int] = {}
+        for t in doc:
+            tf_map[t] = tf_map.get(t, 0) + 1
+
+        score = 0.0
+        for term in query_terms:
+            tf = tf_map.get(term, 0)
+            if tf == 0:
+                continue
+            numerator = tf * (K1 + 1)
+            denominator = tf + K1 * (1 - B + B * doc_len / avgdl)
+            score += idf.get(term, 0.0) * (numerator / denominator)
+
+        # Slight boost for closed Jira tickets — more actionable than KB articles
+        if candidate.source == "jira_closed":
+            score *= 1.1
+
+        scored.append((score, candidate))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:top_k]
+
+    print(
+        f"[cx_reranker] Top {len(top)} candidates selected "
+        f"(scores: {[round(s, 2) for s, _ in top]})"
+    )
+    return [c for _, c in top]
