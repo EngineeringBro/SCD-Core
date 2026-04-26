@@ -1,0 +1,73 @@
+name: "SCD Core — Build Ticket Cache"
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_tickets:
+        description: "Max tickets to cache (0 = all, default 100)"
+        required: false
+        default: "100"
+      resume:
+        description: "Resume from last checkpoint?"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  build-cache:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # commit cache file back to main
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build ticket cache
+        env:
+          JIRA_EMAIL:       ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN:   ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_BASE_URL:    ${{ secrets.JIRA_BASE_URL }}
+          MAX_CACHE_TICKETS: ${{ github.event.inputs.max_tickets }}
+        run: |
+          if [ "${{ github.event.inputs.resume }}" = "true" ]; then
+            python scripts/build_ticket_cache.py --resume
+          else
+            python scripts/build_ticket_cache.py
+          fi
+
+      - name: Commit cache to repo
+        run: |
+          git config user.name  "scd-core-bot"
+          git config user.email "scd-core-bot@users.noreply.github.com"
+          git add knowledge/tickets_cache.jsonl.gz
+          git add knowledge/cache_progress.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Cache unchanged — nothing to commit."
+          else
+            TICKET_COUNT=$(python -c "
+          import gzip, json
+          count = sum(1 for _ in gzip.open('knowledge/tickets_cache.jsonl.gz'))
+          print(count)
+          ")
+            git commit -m "chore: update ticket cache [skip ci] — ${TICKET_COUNT} tickets"
+            git push
+          fi
+
+      - name: Print summary
+        run: |
+          python -c "
+          import gzip, json, os
+          path = 'knowledge/tickets_cache.jsonl.gz'
+          count = sum(1 for _ in gzip.open(path))
+          size_mb = os.path.getsize(path) / (1024*1024)
+          print(f'Tickets in cache: {count:,}')
+          print(f'File size: {size_mb:.1f} MB (compressed)')
+          "

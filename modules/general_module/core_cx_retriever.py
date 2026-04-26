@@ -9,9 +9,12 @@ Returns a list of Candidate dataclass objects with no scoring applied.
 Scoring is done by cx_reranker.
 """
 from __future__ import annotations
+import gzip
+import json
 import re
 import urllib.parse
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -86,14 +89,26 @@ def retrieve(ticket: dict, jira) -> list[Candidate]:
 
     candidates: list[Candidate] = []
 
-    # Source 1: Closed SCD tickets
+    # Source 1: Local ticket cache (fast, no API call)
     try:
-        jira_candidates = _fetch_jira_closed(jira, keywords, ticket.get("key", ""))
-        candidates.extend(jira_candidates)
+        cache_candidates = _fetch_from_cache(keywords, ticket.get("key", ""))
+        candidates.extend(cache_candidates)
+        print(f"[cx_retriever] Cache hit: {len(cache_candidates)} candidates")
     except Exception as exc:
-        print(f"[cx_retriever] Jira closed-ticket search failed: {exc}")
+        print(f"[cx_retriever] Cache read failed (will fall back to live API): {exc}")
 
-    # Source 2: JSM Knowledge Base articles
+    # Source 2: Live Jira API for closed tickets (fallback or supplement)
+    if len(candidates) < 5:
+        try:
+            jira_candidates = _fetch_jira_closed(jira, keywords, ticket.get("key", ""))
+            # Deduplicate by ref_id
+            existing_ids = {c.ref_id for c in candidates}
+            new = [c for c in jira_candidates if c.ref_id not in existing_ids]
+            candidates.extend(new)
+        except Exception as exc:
+            print(f"[cx_retriever] Jira closed-ticket search failed: {exc}")
+
+    # Source 3: JSM Knowledge Base articles
     try:
         kb_candidates = _fetch_kb_articles(jira, keywords)
         candidates.extend(kb_candidates)
@@ -104,6 +119,71 @@ def retrieve(ticket: dict, jira) -> list[Candidate]:
     n_kb = sum(1 for c in candidates if c.source == "kb_article")
     print(f"[cx_retriever] Retrieved {len(candidates)} candidates ({n_jira} jira, {n_kb} kb)")
     return candidates[:50]
+
+
+_CACHE_PATH = Path("knowledge/tickets_cache.jsonl.gz")
+
+
+def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
+    """
+    Search the local gzip JSONL cache for tickets matching keywords.
+    Returns up to 30 candidates. Returns [] if cache doesn't exist yet.
+    """
+    if not _CACHE_PATH.exists():
+        return []
+
+    kw_set = {k.lower() for k in keywords}
+    matches: list[Candidate] = []
+
+    with gzip.open(_CACHE_PATH, "rt", encoding="utf-8") as gz:
+        for line in gz:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            key = rec.get("key", "")
+            if key == exclude_key:
+                continue
+
+            # Score: count keyword hits across searchable fields
+            searchable = " ".join([
+                rec.get("summary", ""),
+                rec.get("description", ""),
+                rec.get("topic", ""),
+                rec.get("resolution", ""),
+                " ".join(rec.get("comments", [])),
+            ]).lower()
+
+            hits = sum(1 for kw in kw_set if kw in searchable)
+            if hits == 0:
+                continue
+
+            body = (
+                f"Description: {rec.get('description', '')[:400]}\n"
+                f"Resolution: {rec.get('resolution', '')}\n"
+                f"Comments: {' | '.join(rec.get('comments', [])[:3])}"
+            )
+
+            matches.append((hits, Candidate(
+                source="jira_closed",
+                ref_id=key,
+                title=rec.get("summary", ""),
+                body=body,
+                url=f"https://servicecentral.atlassian.net/browse/{key}",
+                metadata={
+                    "topic": rec.get("topic", ""),
+                    "root_cause": rec.get("root_cause", ""),
+                    "resolution": rec.get("resolution", ""),
+                },
+            )))
+
+    # Sort by hit count descending, return top 30
+    matches.sort(key=lambda x: x[0], reverse=True)
+    return [c for _, c in matches[:30]]
 
 
 def _fetch_jira_closed(jira, keywords: list[str], exclude_key: str) -> list[Candidate]:
