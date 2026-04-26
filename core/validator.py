@@ -16,7 +16,7 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 
-VALIDATOR_MODEL = "gpt-4o"
+VALIDATOR_MODEL = "claude-sonnet-4.5"
 MAX_TOKENS = 512
 
 # GitHub Copilot exposes an OpenAI-compatible endpoint.
