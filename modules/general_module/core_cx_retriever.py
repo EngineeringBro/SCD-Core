@@ -166,12 +166,15 @@ def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
             if hits == 0:
                 continue
 
-            # Build a rich body: description + resolution + last 3 agent comments
+            # Build a rich body: description + resolution + last 5 comments,
+            # marking internal (agent-only) notes clearly so the LLM knows
+            # which are resolution steps vs customer messages.
             comments = rec.get("comments", [])
             comment_texts = []
-            for c in comments[-5:]:  # last 5 comments = most likely resolution context
+            for c in comments[-5:]:
                 if isinstance(c, dict):
-                    comment_texts.append(f"[{c.get('author', '?')}] {c.get('body', '')}")
+                    tag = "[INTERNAL]" if c.get("internal") else "[PUBLIC]"
+                    comment_texts.append(f"{tag} [{c.get('author', '?')}] {c.get('body', '')}")
                 else:
                     comment_texts.append(c)
 
@@ -179,6 +182,7 @@ def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
                 f"Description: {rec.get('description', '')[:500]}\n"
                 f"Resolution: {rec.get('resolution', '')}\n"
                 f"Type of work: {rec.get('type_of_work', '')}\n"
+                f"Assignee: {rec.get('assignee', '')}\n"
                 f"Comments: {' | '.join(comment_texts)}"
             )
 
@@ -189,9 +193,10 @@ def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
                 body=body,
                 url=f"https://servicecentral.atlassian.net/browse/{key}",
                 metadata={
-                    "topic": rec.get("topic", ""),
+                    "topic":      rec.get("topic", ""),
                     "root_cause": rec.get("root_cause", ""),
                     "resolution": rec.get("resolution", ""),
+                    "assignee":   rec.get("assignee", ""),
                 },
             )))
 

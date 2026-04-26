@@ -18,18 +18,22 @@ Each JSONL line:
         "topic": "Transaction Errors",
         "root_cause": "Software Bug",
         "resolution": "Fixed",
+        "resolutiondate": "2025-01-16T08:30:00.000+0000",
         "status": "Closed",
         "issuetype": "Support",
+        "assignee": "John Smith",
+        "reporter": "Jane Doe",
         "product": "RepairQ Enterprise",
         "org": "Mobile Klinik",
         "support_level": "L2",
         "severity": "Medium",
         "type_of_work": "Bug Fix",
         "labels": ["printing", "mk"],
+        "timespent": 3600,             # seconds logged on ticket (null if none)
         "created": "2025-01-15T10:00:00.000+0000",
         "updated": "2025-01-16T08:30:00.000+0000",
         "comments": [
-            {"author": "John Smith", "created": "2025-01-15T11:00:00.000+0000", "body": "..."}  # max 1500 chars each, ALL comments kept
+            {"author": "John Smith", "created": "2025-01-15T11:00:00.000+0000", "internal": false, "body": "..."}  # max 1500 chars; internal=true means agent-only note
         ],
         "cached_at": "2026-04-26T..."
     }
@@ -60,7 +64,8 @@ MAX_TICKETS       = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unli
 JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
 
 FIELDS = [
-    "summary", "description", "resolution", "status", "issuetype", "labels",
+    "summary", "description", "resolution", "resolutiondate", "status", "issuetype",
+    "assignee", "reporter", "labels", "timespent",
     "comment", "created", "updated",
     "customfield_10170",   # Topic Field
     "customfield_10201",   # Root Cause
@@ -122,8 +127,9 @@ def _build_record(issue: dict) -> dict:
 
     description = _extract_text(f.get("description"))[:MAX_DESC_CHARS]
 
-    # Keep ALL comments with author + timestamp so we can tell the full conversation
-    # and distinguish customer messages from agent resolutions
+    # Keep ALL comments with author + timestamp + internal flag so we can tell the
+    # full conversation and distinguish internal agent notes from public client replies.
+    # jsdPublic=False means internal note (agent-only); True or absent = public reply.
     comments_raw = (f.get("comment") or {}).get("comments", [])
     comments = []
     for c in comments_raw:
@@ -131,10 +137,14 @@ def _build_record(issue: dict) -> dict:
         if not body:
             continue
         author = (c.get("author") or {}).get("displayName", "")
+        # jsdPublic=False → internal note; True or missing → public/customer-visible
+        jsd_public = c.get("jsdPublic")
+        internal = (jsd_public is False)  # explicit False only; None/True = public
         comments.append({
-            "author":  author,
-            "created": c.get("created", ""),
-            "body":    body[:MAX_COMMENT_CHARS],
+            "author":   author,
+            "created":  c.get("created", ""),
+            "internal": internal,
+            "body":     body[:MAX_COMMENT_CHARS],
         })
 
     # multi-select product → first value only for simplicity
@@ -147,17 +157,21 @@ def _build_record(issue: dict) -> dict:
     labels = f.get("labels") or []
 
     return {
-        "key":           issue["key"],
-        "summary":       f.get("summary", ""),
-        "description":   description,
-        "topic":         (f.get("customfield_10170") or {}).get("value", ""),
-        "root_cause":    (f.get("customfield_10201") or {}).get("value", ""),
-        "resolution":    (f.get("resolution") or {}).get("name", ""),
-        "status":        (f.get("status") or {}).get("name", ""),
-        "issuetype":     (f.get("issuetype") or {}).get("name", ""),
-        "support_level": (f.get("customfield_10186") or {}).get("value", ""),
-        "severity":      (f.get("customfield_10036") or {}).get("value", ""),
-        "type_of_work":  (f.get("customfield_10143") or {}).get("value", ""),
+        "key":            issue["key"],
+        "summary":        f.get("summary", ""),
+        "description":    description,
+        "topic":          (f.get("customfield_10170") or {}).get("value", ""),
+        "root_cause":     (f.get("customfield_10201") or {}).get("value", ""),
+        "resolution":     (f.get("resolution") or {}).get("name", ""),
+        "resolutiondate": f.get("resolutiondate", ""),
+        "status":         (f.get("status") or {}).get("name", ""),
+        "issuetype":      (f.get("issuetype") or {}).get("name", ""),
+        "assignee":       (f.get("assignee") or {}).get("displayName", ""),
+        "reporter":       (f.get("reporter") or {}).get("displayName", ""),
+        "support_level":  (f.get("customfield_10186") or {}).get("value", ""),
+        "severity":       (f.get("customfield_10036") or {}).get("value", ""),
+        "type_of_work":   (f.get("customfield_10143") or {}).get("value", ""),
+        "timespent":      f.get("timespent"),  # seconds logged, None if no time logged
         "labels":        labels,
         "product":       product,
         "org":           org,

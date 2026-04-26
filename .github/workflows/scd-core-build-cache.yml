@@ -49,6 +49,30 @@ jobs:
           print('search OK:', issues[0]['key'] if issues else 'no results')
           "
 
+      - name: Dump all fields from one ticket (field discovery)
+        env:
+          JIRA_EMAIL:     ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_BASE_URL:  ${{ secrets.JIRA_BASE_URL }}
+        run: |
+          python -c "
+          import sys, json
+          sys.path.insert(0, '.')
+          from core.jira_clients import JiraReadClient
+          j = JiraReadClient()
+          data = j._search_jql({'jql': 'project = SCD AND resolution is not EMPTY ORDER BY updated DESC', 'maxResults': 1})
+          issue = data['issues'][0]
+          fields = issue['fields']
+          print('=== TICKET:', issue['key'], '===')
+          for k, v in sorted(fields.items()):
+              if v is None or v == '' or v == [] or v == {}:
+                  continue
+              display = str(v)
+              if len(display) > 300:
+                  display = display[:300] + '...'
+              print(f'{k}: {display}')
+          "
+
       - name: Build ticket cache
         env:
           JIRA_EMAIL:       ${{ secrets.JIRA_EMAIL }}
