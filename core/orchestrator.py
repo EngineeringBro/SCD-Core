@@ -18,9 +18,12 @@ Flow:
   4. Save state
 """
 from __future__ import annotations
+import hashlib
+import hmac as _hmac
 import json
 import os
 import sys
+from dataclasses import asdict
 from core.jira_clients import JiraReadClient
 from core.router import load_registry, discover_modules, route
 from core import gatekeeper, state as state_store
@@ -43,6 +46,15 @@ FIELDS = [
     "customfield_10158",  # Product
     "customfield_10002",  # Organizations
 ]
+
+
+def _sign_suggestion(suggestion, key: str) -> None:
+    """Compute HMAC-SHA256 of the suggestion and store it in suggestion.hmac_signature."""
+    payload = json.dumps(asdict(suggestion), sort_keys=True, ensure_ascii=False)
+    payload_no_sig = json.loads(payload)
+    payload_no_sig["hmac_signature"] = ""
+    canonical = json.dumps(payload_no_sig, sort_keys=True, ensure_ascii=False).encode()
+    suggestion.hmac_signature = _hmac.new(key.encode(), canonical, hashlib.sha256).hexdigest()
 
 
 def run() -> None:
@@ -123,6 +135,11 @@ def run() -> None:
         validator_result = validator_review(suggestion)
         print(f"[orchestrator] {ticket_id}: Brain3 => {validator_result.verdict}")
 
+        # Sign the proposal with HMAC before posting so executor can verify it
+        hmac_key = os.environ.get("PROPOSAL_HMAC_KEY", "")
+        if hmac_key:
+            _sign_suggestion(suggestion, hmac_key)
+
         # Human reviews Brain 3's output — pass the full result
         issue_number = post_proposal(suggestion, gate_summary, validator_result)
         print(f"[orchestrator] {ticket_id}: proposal posted as GitHub Issue #{issue_number}")
@@ -153,4 +170,13 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="SCD Core Orchestrator")
+    parser.add_argument(
+        "--mode",
+        choices=["scan", "propose"],
+        default="propose",
+        help="Accepted for workflow compatibility. Full pipeline always runs.",
+    )
+    parser.parse_args()
     run()

@@ -16,9 +16,10 @@ import hmac
 import json
 import os
 import sys
+import yaml
 from dataclasses import asdict
 from core.jira_clients import JiraReadClient, JiraWriteClient
-from core.resolution_suggestion import ResolutionSuggestion, Action
+from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from core.notification_logs import append_row
 from core.github_issues import close_proposal
 import core.state as state_store
@@ -186,19 +187,36 @@ def _execute_action(action: Action, ticket_id: str, jira: JiraWriteClient) -> st
         return f"UNKNOWN action type '{t}' — skipped"
 
 
+def _load_transitions() -> dict[str, str]:
+    """Load transition name-to-ID mapping from configs/jira_fields.yaml."""
+    config_path = os.path.join(os.path.dirname(__file__), "..", "configs", "jira_fields.yaml")
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return {str(k): str(v) for k, v in (data.get("transitions") or {}).items()}
+    except Exception:
+        return {}
+
+
 def _resolve_transition_id(to_name: str) -> str:
-    """Map human-readable transition name to Jira transition ID."""
-    # These IDs are from configs/jira_fields.yaml
-    mapping = {
-        "Closed": "81",
-        "Resolve": "81",
-        "In Progress": "21",
-        "Pending": "31",
-        "Open": "11",
+    """Map human-readable transition name to Jira transition ID from configs/jira_fields.yaml."""
+    # Aliases: modules use names like 'Closed' or 'Resolve'
+    _aliases = {
+        "closed": "close",
+        "resolve": "resolve",
+        "resolved": "resolve",
+        "in progress": "in_progress",
+        "pending": "pending",
+        "open": "open",
     }
-    tid = mapping.get(to_name)
+    transitions = _load_transitions()
+    key = _aliases.get(to_name.lower(), to_name.lower())
+    tid = transitions.get(key)
     if not tid:
-        raise ValueError(f"Unknown transition target: '{to_name}'. Add it to executor._resolve_transition_id")
+        raise ValueError(
+            f"Unknown transition target: '{to_name}'. "
+            f"Add it to configs/jira_fields.yaml under 'transitions:'"
+        )
     return tid
 
 
@@ -216,3 +234,37 @@ def _text_to_adf(text: str) -> dict:
         "type": "doc",
         "content": paragraphs or [{"type": "paragraph", "content": [{"type": "text", "text": text}]}],
     }
+
+
+if __name__ == "__main__":
+    import argparse
+    from dataclasses import fields as _dc_fields
+    from core.github_issues import fetch_proposal_json
+
+    parser = argparse.ArgumentParser(description="SCD Core Executor")
+    parser.add_argument("--mode", choices=["execute"], default="execute")
+    parser.add_argument("--issue", type=int, required=True, help="Proposal GitHub Issue number")
+    parser.add_argument("--ticket", required=True, help="Jira ticket ID — must match proposal")
+    args = parser.parse_args()
+
+    proposal_data = fetch_proposal_json(args.issue)
+
+    # Deserialize ResolutionSuggestion from the embedded JSON
+    known = {f.name for f in _dc_fields(ResolutionSuggestion)}
+    flat = {k: v for k, v in proposal_data.items() if k in known and k not in ("actions", "revalidation_targets")}
+    suggestion = ResolutionSuggestion(**flat)
+    suggestion.actions = [Action(**a) for a in proposal_data.get("actions", [])]
+    suggestion.revalidation_targets = [
+        RevalidationTarget(**t) for t in proposal_data.get("revalidation_targets", [])
+    ]
+
+    # Safety: ticket must match the input argument
+    if suggestion.ticket_id != args.ticket:
+        print(
+            f"[executor] ABORT: Proposal ticket_id '{suggestion.ticket_id}' "
+            f"!= --ticket '{args.ticket}'. Refusing to execute."
+        )
+        sys.exit(1)
+
+    hmac_key = os.environ.get("PROPOSAL_HMAC_KEY", "")
+    run(suggestion, args.issue, hmac_key)

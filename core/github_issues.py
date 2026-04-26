@@ -84,6 +84,25 @@ def close_proposal(issue_number: int, comment: str) -> None:
         pass
 
 
+def fetch_proposal_json(issue_number: int) -> dict:
+    """
+    Fetch a proposal GitHub Issue and extract the embedded ResolutionSuggestion JSON.
+    The JSON is stored in the Brain 1 Raw Output <details> block as a ```json code fence.
+    """
+    import re
+    repo = _repo()
+    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}"
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        issue = json.loads(r.read())
+    body = issue.get("body", "")
+    # Find the last ```json block (Brain 1 raw output is the only JSON block in the body)
+    matches = re.findall(r"```json\n(.*?)\n```", body, re.DOTALL)
+    if not matches:
+        raise ValueError(f"No JSON block found in proposal Issue #{issue_number}")
+    return json.loads(matches[-1])
+
+
 def _build_body(
     suggestion: ResolutionSuggestion,
     gate_summary: str,

@@ -11,44 +11,8 @@ on:
         default: 'manual scan'
 
 jobs:
-  scan:
-    name: Scan & Route
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      tickets_found: ${{ steps.scan.outputs.tickets_found }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt -q
-
-      - name: Run scanner
-        id: scan
-        env:
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
-        run: python -m core.orchestrator --mode scan
-
-      - name: Upload run trace
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: run-trace-${{ github.run_number }}
-          path: run_trace.json
-          retention-days: 90
-
-  investigate:
-    name: Investigate & Propose
-    needs: scan
+  scan-and-propose:
+    name: Scan & Propose
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -64,12 +28,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -q
 
-      - name: Download scan results
-        uses: actions/download-artifact@v4
-        with:
-          name: run-trace-${{ github.run_number }}
-
-      - name: Run modules + gatekeeper + validator → post proposals
+      - name: Scan Jira + run modules + post proposals
         env:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
@@ -78,7 +37,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPO: ${{ github.repository }}
-        run: python -m core.orchestrator --mode propose
+        run: python -m core.orchestrator
 
       - name: Commit updated scan state
         run: |
@@ -93,5 +52,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: run-trace-${{ github.run_number }}
-          path: run_trace.json
+          path: run-trace/summary.json
           retention-days: 90

@@ -31,26 +31,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -q
 
-      - name: Re-validate proposal before executing
+      - name: Re-validate + execute approved actions
         env:
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
-          PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
-        run: |
-          python -m core.executor \
-            --mode revalidate \
-            --issue ${{ github.event.inputs.proposal_issue_number }} \
-            --ticket ${{ github.event.inputs.ticket_id }}
-
-      - name: Execute approved actions
-        env:
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
           PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
         run: |
