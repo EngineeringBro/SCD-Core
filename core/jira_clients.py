@@ -30,9 +30,14 @@ class _JiraBase:
 
     def _get(self, path: str) -> dict:
         url = self.base + path
+        print(f"[jira] GET {url[:120]}")  # truncate to avoid leaking full token in logs
         req = urllib.request.Request(url, headers=self._headers)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            return json.loads(r.read())
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace")[:500]
+            raise RuntimeError(f"Jira API {e.code} on {url[:100]}: {body}") from e
 
     def get_issue(self, ticket_id: str) -> dict:
         return self._get(f"/rest/api/3/issue/{ticket_id}")
