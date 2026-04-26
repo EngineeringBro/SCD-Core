@@ -66,7 +66,7 @@ JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
 
 FIELDS = [
     "summary", "description", "resolution", "resolutiondate", "status", "issuetype",
-    "assignee", "reporter", "labels", "timespent",
+    "assignee", "reporter", "labels", "timespent", "priority",
     "comment", "created", "updated",
     "customfield_10170",   # Topic Field
     "customfield_10201",   # Root Cause
@@ -175,6 +175,7 @@ def _build_record(issue: dict) -> dict:
         "reporter_email": (f.get("reporter") or {}).get("emailAddress", "") or f.get("customfield_10033", ""),
         "support_level":  (f.get("customfield_10186") or {}).get("value", ""),
         "severity":       (f.get("customfield_10036") or {}).get("value", ""),
+        "priority":       (f.get("priority") or {}).get("name", ""),
         "type_of_work":   (f.get("customfield_10143") or {}).get("value", ""),
         "timespent":      f.get("timespent"),  # seconds logged, None if no time logged
         "repairq_link":   _extract_text(f.get("customfield_10146")) or "",  # RepairQ ticket URL
