@@ -94,6 +94,7 @@ def _build_prompt(ticket: dict, suggestion: ResolutionSuggestion) -> str:
     status = (fields.get("status") or {}).get("name", "")
     topic = (fields.get("customfield_10170") or {}).get("value", "")
     description = _extract_description(fields.get("description") or {})
+    actions_summary = json.dumps([{"step": a.step, "type": a.type} for a in suggestion.actions])
 
     return f"""Analyze this SCD support ticket and the module's proposed resolution.
 
@@ -107,7 +108,7 @@ TICKET:
 MODULE PROPOSED:
 - Module: {suggestion.module} v{suggestion.module_version}
 - Initial diagnosis: {suggestion.diagnosis}
-- Actions: {json.dumps([{{"step": a.step, "type": a.type}} for a in suggestion.actions])}
+- Actions: {actions_summary}
 - Module confidence: {suggestion.module_confidence}
 
 Respond with JSON in this exact shape:
