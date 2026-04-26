@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
-from modules.general.core_cx_retriever import Candidate
+from modules.general_module.core_cx_retriever import Candidate
 
 try:
     from openai import OpenAI

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
-from modules.general import core_cx_retriever, core_cx_reranker, core_cx_llm
+from modules.general_module import core_cx_retriever, core_cx_reranker, core_cx_llm
 import os
 
 

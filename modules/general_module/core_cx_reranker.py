@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import os
 import re
-from modules.general.core_cx_retriever import Candidate
+from modules.general_module.core_cx_retriever import Candidate
 
 # BM25 hyperparameters
 K1 = 1.5    # term frequency saturation
