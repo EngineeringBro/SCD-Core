@@ -1,0 +1,11 @@
+topic: Unknown
+topic_slug: unknown
+entries:
+- ticket_id: SCD-141991
+  guidance: this is a test ticket that looks like a notification so the good approach
+    is to dimiss it and fill the most appropiate topics that match it with 1 minute
+    logged time to user
+  provided_by: EngineeringBro
+  provided_at: '2026-04-26T14:39:11.385630+00:00'
+  issue_number: 6
+last_updated: '2026-04-26T14:39:11.385639+00:00'
