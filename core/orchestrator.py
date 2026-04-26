@@ -24,9 +24,9 @@ import sys
 from core.jira_clients import JiraReadClient
 from core.router import load_registry, discover_modules, route
 from core import gatekeeper, state as state_store
+from core.analyzer import analyze as brain1_analyze
 from core.validator import review as validator_review
 from core.github_issues import post_proposal
-from dataclasses import asdict
 
 # JQL to find open SCD tickets
 JQL_BASE = (
@@ -96,6 +96,17 @@ def run() -> None:
             print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
             continue
 
+        # Brain 1 — Claude Sonnet 4.6 enriches the diagnosis
+        analysis = brain1_analyze(ticket, suggestion)
+        suggestion.diagnosis = analysis.enriched_diagnosis
+        suggestion.module_confidence = round(
+            min(1.0, max(0.0, suggestion.module_confidence + analysis.confidence_adjustment)), 2
+        )
+        if analysis.flags:
+            print(f"[orchestrator] {ticket_id}: Brain1 flags — {analysis.flags}")
+        print(f"[orchestrator] {ticket_id}: Brain1 analysis {'applied' if not analysis.skipped else 'skipped'}")
+
+        # Brain 2 — Gatekeeper
         gate_result = gatekeeper.check(suggestion)
         print(f"[orchestrator] {ticket_id}: gatekeeper => {gate_result.verdict}")
 
