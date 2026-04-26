@@ -52,24 +52,33 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
 
     prompt = _build_prompt(ticket, suggestion)
 
-    response = client.chat.completions.create(
-        model=ANALYZER_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are Brain 1 of the SCD Core autonomous support agent. "
-                    "Your job is to analyze a Jira support ticket and a proposed resolution plan, "
-                    "then produce an enriched diagnosis. "
-                    "Be concise and precise. Output JSON only."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=MAX_TOKENS,
-        temperature=0.1,
-        response_format={"type": "json_object"},
-    )
+    try:
+        response = client.chat.completions.create(
+            model=ANALYZER_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Brain 1 of the SCD Core autonomous support agent. "
+                        "Your job is to analyze a Jira support ticket and a proposed resolution plan, "
+                        "then produce an enriched diagnosis. "
+                        "Be concise and precise. Output JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=MAX_TOKENS,
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        print(f"[analyzer] Brain1 API call failed ({type(exc).__name__}: {exc}) — skipping enrichment")
+        return AnalysisResult(
+            enriched_diagnosis=suggestion.diagnosis,
+            confidence_adjustment=0.0,
+            flags=[f"Brain1 skipped: {type(exc).__name__}"],
+            skipped=True,
+        )
 
     raw = response.choices[0].message.content or ""
 

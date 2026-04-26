@@ -38,7 +38,7 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
-          COPILOT_TOKEN: ${{ secrets.GH_TOKEN }}     # PAT with Copilot entitlement — Brain 1 + Brain 3 LLM calls
+          COPILOT_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # installation token accepted by Copilot Business API
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}       # auto-injected — GitHub Issues API only
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPO: ${{ github.repository }}

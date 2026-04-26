@@ -69,25 +69,29 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
 
     prompt = _build_prompt(suggestion)
 
-    response = client.chat.completions.create(
-        model=VALIDATOR_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are Brain 3 of SCD Core, an autonomous support-ticket resolution system. "
-                    "Brain 1 (Claude) has analyzed a ticket and proposed a resolution. "
-                    "Your job is to independently review that proposal and produce your own "
-                    "refined output. This is what the human reviewer will see and act on. "
-                    "Be precise. Flag anything risky. Output JSON only."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=MAX_TOKENS,
-        temperature=0.1,
-        response_format={"type": "json_object"},
-    )
+    try:
+        response = client.chat.completions.create(
+            model=VALIDATOR_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Brain 3 of SCD Core, an autonomous support-ticket resolution system. "
+                        "Brain 1 (Claude) has analyzed a ticket and proposed a resolution. "
+                        "Your job is to independently review that proposal and produce your own "
+                        "refined output. This is what the human reviewer will see and act on. "
+                        "Be precise. Flag anything risky. Output JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=MAX_TOKENS,
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        print(f"[validator] Brain3 API call failed ({type(exc).__name__}: {exc}) — skipping")
+        return _skipped(suggestion, f"Brain3 API error: {type(exc).__name__}")
 
     raw = response.choices[0].message.content or ""
 
