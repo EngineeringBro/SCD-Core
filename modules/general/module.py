@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from modules.general import core_cx_retriever, core_cx_reranker, core_cx_llm
+import os
 
 
 class GeneralModule(Module):
@@ -37,8 +38,9 @@ class GeneralModule(Module):
         # Step 1 — Retrieve candidates from closed tickets + KB
         candidates = core_cx_retriever.retrieve(ticket, jira)
 
-        # Step 2 — BM25 rerank, keep top 5
-        top_candidates = core_cx_reranker.rerank(candidates, ticket, top_k=5) if candidates else []
+        # Step 2 — BM25 rerank, keep top N (configurable via TOP_CANDIDATES env var, default 5)
+        top_k = int(os.environ.get("TOP_CANDIDATES", "5"))
+        top_candidates = core_cx_reranker.rerank(candidates, ticket, top_k=top_k) if candidates else []
 
         # Step 3 — LLM judge
         if top_candidates:
