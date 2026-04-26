@@ -66,7 +66,8 @@ PROGRESS_FILE   = Path("knowledge/cache_progress.json")
 # ── Jira helpers ───────────────────────────────────────────────────────────────
 
 def _count_total(jira: JiraReadClient) -> int:
-    data = jira._search_jql({"jql": JQL, "maxResults": 0, "fields": ["summary"]})
+    # /rest/api/3/search/jql requires maxResults >= 1; use 1 and read the total field
+    data = jira._search_jql({"jql": JQL, "maxResults": 1, "fields": ["summary"]})
     return data.get("total", 0)
 
 
