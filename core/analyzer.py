@@ -32,12 +32,14 @@ class AnalysisResult:
     skipped: bool = False
 
 
-def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
+def analyze(ticket: dict, suggestion: ResolutionSuggestion, learned_guidance: str | None = None) -> AnalysisResult:
     """
     Use Claude Sonnet 4.6 to review the ticket and the module's initial
     ResolutionSuggestion. Returns an enriched diagnosis and any flags.
 
     If COPILOT_TOKEN is not available, returns the module's original diagnosis unchanged.
+    If learned_guidance is provided (human-verified knowledge for this topic), it is
+    injected into the prompt as authoritative context — applies to ALL modules.
     """
     gh_token = os.environ.get("COPILOT_TOKEN", "")
     if not gh_token or OpenAI is None:
@@ -50,7 +52,7 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
 
     client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
 
-    prompt = _build_prompt(ticket, suggestion)
+    prompt = _build_prompt(ticket, suggestion, learned_guidance=learned_guidance)
 
     try:
         response = client.chat.completions.create(
@@ -103,13 +105,25 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
         )
 
 
-def _build_prompt(ticket: dict, suggestion: ResolutionSuggestion) -> str:
+def _build_prompt(ticket: dict, suggestion: ResolutionSuggestion, learned_guidance: str | None = None) -> str:
     fields = ticket.get("fields", {})
     summary = fields.get("summary", "")
     status = (fields.get("status") or {}).get("name", "")
     topic = (fields.get("customfield_10170") or {}).get("value", "")
     description = _extract_description(fields.get("description") or {})
     actions_summary = json.dumps([{"step": a.step, "type": a.type} for a in suggestion.actions])
+
+    guidance_block = ""
+    if learned_guidance:
+        guidance_block = f"""
+--- AUTHORITATIVE HUMAN GUIDANCE ---
+A human expert has already provided the correct resolution approach for tickets
+with this topic. Treat this as the most reliable signal — weight it heavily when
+adjusting confidence and enriching the diagnosis.
+
+{learned_guidance}
+--- END HUMAN GUIDANCE ---
+"""
 
     return f"""Analyze this SCD support ticket and the module's proposed resolution.
 
@@ -119,7 +133,7 @@ TICKET:
 - Status: {status}
 - Topic Field: {topic}
 - Description (first 800 chars): {description[:800]}
-
+{guidance_block}
 MODULE PROPOSED:
 - Module: {suggestion.module} v{suggestion.module_version}
 - Initial diagnosis: {suggestion.diagnosis}

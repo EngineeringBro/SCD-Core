@@ -30,6 +30,7 @@ from core import gatekeeper, state as state_store
 from core.analyzer import analyze as brain1_analyze
 from core.validator import review as validator_review
 from core.github_issues import post_proposal
+from core.learning_store import get_guidance_text
 
 # JQL to find open SCD tickets
 JQL_BASE = (
@@ -113,8 +114,18 @@ def run() -> None:
             print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
             continue
 
+        # Stamp topic on every suggestion regardless of module, so github_issues.py
+        # and the learning store can surface/save it correctly.
+        ticket_topic = (ticket.get("fields", {}).get("customfield_10170") or {}).get("value", "Unknown")
+        suggestion.sub_agent_attribution.setdefault("topic", ticket_topic)
+
+        # Load any human-verified guidance for this topic (applies to ALL modules)
+        learned_guidance = get_guidance_text(ticket_topic)
+        if learned_guidance:
+            print(f"[orchestrator] {ticket_id}: human guidance found for topic '{ticket_topic}' — injecting into Brain 1")
+
         # Brain 1 — Claude Sonnet 4.6 enriches the diagnosis
-        analysis = brain1_analyze(ticket, suggestion)
+        analysis = brain1_analyze(ticket, suggestion, learned_guidance=learned_guidance)
         suggestion.diagnosis = analysis.enriched_diagnosis
         suggestion.module_confidence = round(
             min(1.0, max(0.0, suggestion.module_confidence + analysis.confidence_adjustment)), 2

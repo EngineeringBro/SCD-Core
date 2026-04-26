@@ -74,10 +74,7 @@ def judge(
     try:
         parsed = json.loads(stripped)
         suggestion = _build_suggestion(ticket, parsed, candidates, module_name, module_version)
-        # Store topic in sub_agent_attribution so github_issues.py can surface it
-        fields = ticket.get("fields", {})
-        topic = (fields.get("customfield_10170") or {}).get("value", "Unknown")
-        suggestion.sub_agent_attribution["topic"] = topic
+        # Note: topic is stamped on all suggestions by the orchestrator after module.run()
         if learned_guidance:
             suggestion.sub_agent_attribution["guidance_applied"] = True
         return suggestion
