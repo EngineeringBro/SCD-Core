@@ -39,7 +39,7 @@ Scan → Route → Module (Brain 1) → Gatekeeper (Brain 2, pure Python)
 ## Secrets Required
 
 **Repo-level** (available to all jobs):
-- `JIRA_TOKEN` — full Jira API token (read + write; code restricts to read in investigation jobs)
+- `JIRA_API_TOKEN` — full Jira API token (read + write; code restricts to read in investigation jobs)
 - `JIRA_EMAIL`
 - `JIRA_BASE_URL`
 - `ANTHROPIC_API_KEY`
@@ -48,7 +48,7 @@ Scan → Route → Module (Brain 1) → Gatekeeper (Brain 2, pure Python)
 - `GITHUB_TOKEN` — auto-provided by GitHub Actions
 
 **`scd-execute` Environment only** (injected only after approval):
-- Same `JIRA_TOKEN` — this is where the write client credential lives
+- Same `JIRA_API_TOKEN` — this is where the write client credential lives
 - Required reviewer: Hussein Shaib
 
 > Note: Until service accounts are provisioned, the same token is used for both read and write.

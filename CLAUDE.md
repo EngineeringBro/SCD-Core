@@ -38,7 +38,7 @@ Set these in repo **Settings → Secrets and variables → Actions**:
 
 | Secret | Used by |
 |--------|---------|
-| `JIRA_TOKEN` | All workflows |
+| `JIRA_API_TOKEN` | All workflows |
 | `JIRA_EMAIL` | All workflows |
 | `JIRA_BASE_URL` | All workflows (e.g. `https://servicecentral.atlassian.net`) |
 | `ANTHROPIC_API_KEY` | Run workflow (Brain 1) |
@@ -86,7 +86,7 @@ To add learned patterns to a module:
 ```bash
 pip install -r requirements.txt
 
-export JIRA_TOKEN=...
+export JIRA_API_TOKEN=...
 export JIRA_EMAIL=...
 export JIRA_BASE_URL=https://servicecentral.atlassian.net
 export ANTHROPIC_API_KEY=...

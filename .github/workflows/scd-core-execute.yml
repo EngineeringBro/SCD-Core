@@ -33,7 +33,7 @@ jobs:
 
       - name: Re-validate + execute approved actions
         env:
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

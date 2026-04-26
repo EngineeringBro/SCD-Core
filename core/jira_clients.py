@@ -5,7 +5,7 @@ JiraWriteClient — exposes read + write operations.
 Investigation jobs import ONLY JiraReadClient.
 The executor imports JiraWriteClient (available only inside scd-execute Environment).
 
-Both use the same underlying JIRA_TOKEN until service accounts are provisioned.
+Both use the same underlying JIRA_API_TOKEN until service accounts are provisioned.
 """
 from __future__ import annotations
 import json
@@ -19,7 +19,7 @@ from typing import Any
 class _JiraBase:
     def __init__(self):
         email = os.environ["JIRA_EMAIL"]
-        token = os.environ["JIRA_TOKEN"]
+        token = os.environ["JIRA_API_TOKEN"]
         self.base = os.environ["JIRA_BASE_URL"].rstrip("/")
         creds = base64.b64encode(f"{email}:{token}".encode()).decode()
         self._headers = {

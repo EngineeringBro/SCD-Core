@@ -34,7 +34,7 @@ jobs:
 
       - name: Scan Jira + run modules + post proposals
         env:
-          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
