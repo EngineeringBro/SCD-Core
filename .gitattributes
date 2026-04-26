@@ -1,0 +1,2 @@
+# State file is written by GitHub Actions — always prefer the remote version during merges
+state/scan-state.json merge=ours

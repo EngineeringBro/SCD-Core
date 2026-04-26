@@ -85,7 +85,7 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
                 },
                 {"role": "user", "content": prompt},
             ],
-            max_tokens=MAX_TOKENS,
+            max_completion_tokens=MAX_TOKENS,
             temperature=0.1,
             response_format={"type": "json_object"},
         )

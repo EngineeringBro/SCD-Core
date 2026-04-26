@@ -82,8 +82,14 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
 
     raw = response.choices[0].message.content or ""
 
+    # Strip markdown code fences if model wraps response in ```json ... ```
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[-1]
+        stripped = stripped.rsplit("```", 1)[0].strip()
+
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(stripped)
         return AnalysisResult(
             enriched_diagnosis=parsed.get("diagnosis", suggestion.diagnosis),
             confidence_adjustment=float(parsed.get("confidence_adjustment", 0.0)),
@@ -93,7 +99,7 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
         return AnalysisResult(
             enriched_diagnosis=suggestion.diagnosis,
             confidence_adjustment=0.0,
-            flags=[f"Analyzer returned unparseable response: {raw[:200]}"],
+            flags=[f"Analyzer returned unparseable response: {stripped[:200]}"],
         )
 
 
