@@ -4,11 +4,13 @@
     "SCD-141990": {
       "processed_at": "2026-04-26T12:39:31.282877+00:00",
       "proposal_issue": 2
-    },  },
+    }
+  },
   "archived_tickets": {
     "SCD-141991": {
       "processed_at": "2026-04-26T12:47:09.307326+00:00",
       "proposal_issue": 3,
       "archived_reason": "re-scan requested — Brain 1+3 were skipped on original run (server-to-server token rejected)"
-    }  }
+    }
+  }
 }
