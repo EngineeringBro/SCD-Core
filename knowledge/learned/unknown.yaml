@@ -8,4 +8,12 @@ entries:
   provided_by: EngineeringBro
   provided_at: '2026-04-26T14:39:11.385630+00:00'
   issue_number: 6
-last_updated: '2026-04-26T14:39:11.385639+00:00'
+- ticket_id: SCD-141991
+  guidance: yes it can be dismissed but the fields to be filled with are wrong, you
+    need to scan the fields choices available and then choose the most matching ones
+    then suggest it as some of the field choices you suggested arent an option in
+    our jira scd ticket fields
+  provided_by: EngineeringBro
+  provided_at: '2026-04-26T14:51:57.153710+00:00'
+  issue_number: 8
+last_updated: '2026-04-26T14:51:57.153748+00:00'
