@@ -19,6 +19,11 @@ except ImportError:
 VALIDATOR_MODEL = "gpt-4o"
 MAX_TOKENS = 512
 
+# GitHub Copilot exposes an OpenAI-compatible endpoint.
+# If OPENAI_API_KEY is not set, we fall back to the GitHub Copilot API
+# using GH_TOKEN — no separate Anthropic or OpenAI billing needed.
+COPILOT_BASE_URL = "https://api.githubcopilot.com"
+
 
 @dataclass
 class ValidatorResult:
@@ -29,18 +34,31 @@ class ValidatorResult:
 
 def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
     """
-    Ask GPT to review the proposal. Returns ValidatorResult.
-    If OPENAI_API_KEY is not set, skips review (returns SKIPPED).
+    Ask an LLM to review the proposal. Returns ValidatorResult.
+    Uses OPENAI_API_KEY if set; otherwise falls back to GitHub Copilot API
+    via GH_TOKEN (same account ServiceCentral already pays for).
     """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key or OpenAI is None:
+    if OpenAI is None:
         return ValidatorResult(
             verdict="SKIPPED",
-            notes="Validator skipped — OPENAI_API_KEY not available.",
+            notes="Validator skipped — openai package not installed.",
             raw_response="",
         )
 
-    client = OpenAI(api_key=api_key)
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    gh_token = os.environ.get("GH_TOKEN", "")
+
+    if openai_key:
+        client = OpenAI(api_key=openai_key)
+    elif gh_token:
+        # Use GitHub Copilot API (OpenAI-compatible, no extra billing)
+        client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
+    else:
+        return ValidatorResult(
+            verdict="SKIPPED",
+            notes="Validator skipped — neither OPENAI_API_KEY nor GH_TOKEN available.",
+            raw_response="",
+        )
 
     prompt = _build_prompt(suggestion)
 
