@@ -54,6 +54,12 @@ class _JiraBase:
 class JiraReadClient(_JiraBase):
     """Read-only Jira client. Safe to use in any job."""
 
+    def _post(self, *args, **kwargs):
+        raise PermissionError("JiraReadClient cannot make POST requests. Use JiraWriteClient only inside executor.py.")
+
+    def _put(self, *args, **kwargs):
+        raise PermissionError("JiraReadClient cannot make PUT requests. Use JiraWriteClient only inside executor.py.")
+
 
 class JiraWriteClient(_JiraBase):
     """

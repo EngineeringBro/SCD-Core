@@ -106,8 +106,8 @@ def run() -> None:
             print(f"[orchestrator] {ticket_id}: Brain1 flags — {analysis.flags}")
         print(f"[orchestrator] {ticket_id}: Brain1 analysis {'applied' if not analysis.skipped else 'skipped'}")
 
-        # Brain 2 — Gatekeeper
-        gate_result = gatekeeper.check(suggestion)
+        # Brain 2 — Gatekeeper (passes source ticket_id to guard against prompt injection)
+        gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
         print(f"[orchestrator] {ticket_id}: gatekeeper => {gate_result.verdict}")
 
         if not gate_result.passed:

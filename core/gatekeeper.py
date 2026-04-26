@@ -43,8 +43,27 @@ class GateResult:
         return [c for c in self.checks if not c.passed]
 
 
-def check(suggestion: ResolutionSuggestion) -> GateResult:
+def check(suggestion: ResolutionSuggestion, source_ticket_id: str | None = None) -> GateResult:
     checks: list[GateCheck] = []
+
+    # Rule: ticket_id in the suggestion must match the ticket being processed
+    # Prevents prompt-injected suggestions from targeting a different ticket
+    if source_ticket_id is not None:
+        checks.append(GateCheck(
+            rule_id="proposal.ticket_id_matches_source",
+            passed=suggestion.ticket_id == source_ticket_id,
+            reason=(
+                f"Proposal ticket_id '{suggestion.ticket_id}' does not match "
+                f"source ticket '{source_ticket_id}' — possible prompt injection."
+            ) if suggestion.ticket_id != source_ticket_id else "",
+        ))
+
+    # Rule: action count must be reasonable (injection guard)
+    checks.append(GateCheck(
+        rule_id="proposal.action_count_reasonable",
+        passed=len(suggestion.actions) <= 10,
+        reason=f"Proposal has {len(suggestion.actions)} actions — exceeds maximum of 10." if len(suggestion.actions) > 10 else "",
+    ))
 
     for action in suggestion.actions:
         checks.extend(_check_action(action, suggestion))
