@@ -7,6 +7,7 @@ Returns the top_k highest-scoring candidates.
 """
 from __future__ import annotations
 import math
+import os
 import re
 from modules.general.core_cx_retriever import Candidate
 
@@ -82,10 +83,25 @@ def rerank(candidates: list[Candidate], ticket: dict, top_k: int = 5) -> list[Ca
         scored.append((score, candidate))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:top_k]
+
+    if not scored:
+        return []
+
+    best_score = scored[0][0]
+
+    # Relative threshold: keep candidates scoring at least MIN_CANDIDATE_RELEVANCE
+    # fraction of the top score (default 0.3 = 30%). Configurable via env var.
+    min_relevance = float(os.environ.get("MIN_CANDIDATE_RELEVANCE", "0.3"))
+
+    top = []
+    for score, candidate in scored[:top_k]:
+        relative = score / best_score if best_score > 0 else 0.0
+        if relative >= min_relevance:
+            top.append((score, relative, candidate))
 
     print(
-        f"[cx_reranker] Top {len(top)} candidates selected "
-        f"(scores: {[round(s, 2) for s, _ in top]})"
+        f"[cx_reranker] {len(top)}/{len(scored)} candidates passed threshold "
+        f"(min_relevance={min_relevance}, "
+        f"scores: {[round(s, 2) for s, _, _ in top]})"
     )
-    return [c for _, c in top]
+    return [c for _, _, c in top]
