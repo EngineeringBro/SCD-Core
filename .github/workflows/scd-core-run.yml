@@ -9,6 +9,10 @@ on:
         description: 'Optional: note about this scan (for audit log)'
         required: false
         default: 'manual scan'
+      ticket_id:
+        description: 'Optional: single ticket ID to process (e.g. SCD-141831). Leave blank to scan full queue.'
+        required: false
+        default: ''
 
 jobs:
   scan-and-propose:
@@ -38,6 +42,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}       # auto-injected — GitHub Issues API only
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPO: ${{ github.repository }}
+          SCAN_TICKET_ID: ${{ github.event.inputs.ticket_id }}
         run: python -m core.orchestrator
 
       - name: Commit updated scan state

@@ -67,17 +67,21 @@ def run() -> None:
 
     print(f"[orchestrator] Modules loaded: {list(module_map.keys())}")
 
-    # Build JQL with delta filter if available
-    last_run = current_state.get("last_run")
-    jql = JQL_BASE
-    if last_run:
-        # Jira updated date format: "2026-04-25 00:00"
-        date_part = last_run[:10].replace("-", "/")
-        jql = (
-            f'project = SCD AND status != Closed AND status != Resolved '
-            f'AND assignee is EMPTY AND updated >= "{date_part}" '
-            f'ORDER BY created ASC'
-        )
+    # Build JQL — single-ticket mode if SCAN_TICKET_ID is set (for safe testing)
+    scan_ticket_id = os.environ.get("SCAN_TICKET_ID", "").strip()
+    if scan_ticket_id:
+        jql = f'project = SCD AND key = "{scan_ticket_id}"'
+        print(f"[orchestrator] Single-ticket mode: {scan_ticket_id}")
+    else:
+        last_run = current_state.get("last_run")
+        jql = JQL_BASE
+        if last_run:
+            date_part = last_run[:10].replace("-", "/")
+            jql = (
+                f'project = SCD AND status != Closed AND status != Resolved '
+                f'AND assignee is EMPTY AND updated >= "{date_part}" '
+                f'ORDER BY created ASC'
+            )
 
     print(f"[orchestrator] JQL: {jql}")
     tickets = jira.search(jql, fields=FIELDS, max_results=100)
