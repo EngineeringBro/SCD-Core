@@ -29,7 +29,7 @@ from core.router import load_registry, discover_modules, route
 from core import gatekeeper, state as state_store
 from core.analyzer import analyze as brain1_analyze
 from core.validator import review as validator_review
-from core.github_issues import post_proposal
+from core.github_issues import post_proposal, is_issue_closed
 from core.learning_store import get_guidance_text
 
 # JQL to find open SCD tickets
@@ -97,9 +97,17 @@ def run() -> None:
         ticket_id = ticket["key"]
 
         if not state_store.ticket_needs_processing(current_state, ticket):
-            print(f"[orchestrator] {ticket_id}: already processed, skipping")
-            skipped_state += 1
-            continue
+            # If the previous proposal Issue was closed (executed, guidance captured, dismissed)
+            # the ticket is eligible for a fresh scan — clear it from state and continue.
+            prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
+            prev_issue = prev_entry.get("proposal_issue")
+            if prev_issue and is_issue_closed(prev_issue):
+                print(f"[orchestrator] {ticket_id}: previous issue #{prev_issue} is closed — clearing state, reprocessing")
+                current_state.get("processed_tickets", {}).pop(ticket_id, None)
+            else:
+                print(f"[orchestrator] {ticket_id}: already processed, skipping")
+                skipped_state += 1
+                continue
 
         module = route(ticket, registry, module_map)
         if module is None:

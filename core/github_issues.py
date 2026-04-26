@@ -95,6 +95,24 @@ def close_proposal(issue_number: int, comment: str) -> None:
         pass
 
 
+def is_issue_closed(issue_number: int) -> bool:
+    """
+    Return True if the GitHub Issue is in 'closed' state.
+    Used by the orchestrator to decide whether a previously-processed ticket
+    is eligible for a fresh scan (proposal was executed, guidance captured, etc.).
+    Returns False on any network error so the ticket stays blocked (safe default).
+    """
+    try:
+        repo = _repo()
+        url = f"https://api.github.com/repos/{repo}/issues/{issue_number}"
+        req = urllib.request.Request(url, headers=_headers(), method="GET")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            issue = json.loads(r.read())
+        return issue.get("state") == "closed"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def fetch_proposal_json(issue_number: int) -> dict:
     """
     Fetch a proposal GitHub Issue and extract the embedded ResolutionSuggestion JSON.
