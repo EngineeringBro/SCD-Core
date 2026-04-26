@@ -50,7 +50,7 @@ MAX_DESC_CHARS  = 1000      # truncate description text
 MAX_COMMENT_CHARS = 500     # truncate each comment body
 CHECKPOINT_EVERY = 500      # save checkpoint every N tickets processed
 MAX_TICKETS     = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unlimited
-JQL = "project = SCD AND statusCategory = Done ORDER BY updated DESC"
+JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
 
 FIELDS = [
     "summary", "description", "resolution", "comment", "created", "updated",

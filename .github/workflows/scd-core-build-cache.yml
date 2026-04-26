@@ -30,6 +30,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Pre-flight Jira connectivity check
+        env:
+          JIRA_EMAIL:     ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_BASE_URL:  ${{ secrets.JIRA_BASE_URL }}
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from core.jira_clients import JiraReadClient
+          j = JiraReadClient()
+          # Test 1: get_issue
+          t = j.get_issue('SCD-141664', fields=['summary'])
+          print('get_issue OK:', t['key'])
+          # Test 2: search with simple JQL
+          issues = j.search('project = SCD AND resolution is not EMPTY ORDER BY updated DESC', fields=['summary'], max_results=1)
+          print('search OK:', issues[0]['key'] if issues else 'no results')
+          "
+
       - name: Build ticket cache
         env:
           JIRA_EMAIL:       ${{ secrets.JIRA_EMAIL }}
