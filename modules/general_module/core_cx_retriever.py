@@ -155,17 +155,31 @@ def _fetch_from_cache(keywords: list[str], exclude_key: str) -> list[Candidate]:
                 rec.get("description", ""),
                 rec.get("topic", ""),
                 rec.get("resolution", ""),
-                " ".join(rec.get("comments", [])),
+                rec.get("type_of_work", ""),
+                " ".join(
+                    (c["body"] if isinstance(c, dict) else c)
+                    for c in rec.get("comments", [])
+                ),
             ]).lower()
 
             hits = sum(1 for kw in kw_set if kw in searchable)
             if hits == 0:
                 continue
 
+            # Build a rich body: description + resolution + last 3 agent comments
+            comments = rec.get("comments", [])
+            comment_texts = []
+            for c in comments[-5:]:  # last 5 comments = most likely resolution context
+                if isinstance(c, dict):
+                    comment_texts.append(f"[{c.get('author', '?')}] {c.get('body', '')}")
+                else:
+                    comment_texts.append(c)
+
             body = (
-                f"Description: {rec.get('description', '')[:400]}\n"
+                f"Description: {rec.get('description', '')[:500]}\n"
                 f"Resolution: {rec.get('resolution', '')}\n"
-                f"Comments: {' | '.join(rec.get('comments', [])[:3])}"
+                f"Type of work: {rec.get('type_of_work', '')}\n"
+                f"Comments: {' | '.join(comment_texts)}"
             )
 
             matches.append((hits, Candidate(

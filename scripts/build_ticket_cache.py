@@ -14,15 +14,23 @@ Each JSONL line:
     {
         "key": "SCD-123",
         "summary": "...",
-        "description": "...",        # plain text, max 1000 chars
+        "description": "...",          # plain text, max 2000 chars
         "topic": "Transaction Errors",
         "root_cause": "Software Bug",
         "resolution": "Fixed",
+        "status": "Closed",
+        "issuetype": "Support",
         "product": "RepairQ Enterprise",
         "org": "Mobile Klinik",
+        "support_level": "L2",
+        "severity": "Medium",
+        "type_of_work": "Bug Fix",
+        "labels": ["printing", "mk"],
         "created": "2025-01-15T10:00:00.000+0000",
         "updated": "2025-01-16T08:30:00.000+0000",
-        "comments": ["comment text 1", "comment text 2", ...],  # max 500 chars each
+        "comments": [
+            {"author": "John Smith", "created": "2025-01-15T11:00:00.000+0000", "body": "..."}  # max 1500 chars each, ALL comments kept
+        ],
         "cached_at": "2026-04-26T..."
     }
 """
@@ -43,20 +51,24 @@ from core.jira_clients import JiraReadClient  # noqa: E402
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-PAGE_SIZE       = 100       # tickets per JQL page (Jira max = 100)
-RATE_DELAY      = 0.15      # seconds between page requests (avoids rate limiting)
-MAX_DESC_CHARS  = 1000      # truncate description text
-MAX_COMMENT_CHARS = 500     # truncate each comment body
-CHECKPOINT_EVERY = 500      # save checkpoint every N tickets processed
-MAX_TICKETS     = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unlimited
+PAGE_SIZE         = 100       # tickets per JQL page (Jira max = 100)
+RATE_DELAY        = 0.15      # seconds between page requests (avoids rate limiting)
+MAX_DESC_CHARS    = 2000      # truncate description text
+MAX_COMMENT_CHARS = 1500      # truncate each comment body (captures full resolutions)
+CHECKPOINT_EVERY  = 500      # save checkpoint every N tickets processed
+MAX_TICKETS       = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unlimited
 JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
 
 FIELDS = [
-    "summary", "description", "resolution", "comment", "created", "updated",
+    "summary", "description", "resolution", "status", "issuetype", "labels",
+    "comment", "created", "updated",
     "customfield_10170",   # Topic Field
     "customfield_10201",   # Root Cause
     "customfield_10158",   # Product
     "customfield_10002",   # Organizations
+    "customfield_10143",   # Type of Work
+    "customfield_10186",   # Support Level
+    "customfield_10036",   # Severity Level
 ]
 
 OUTPUT_FILE     = Path("knowledge/tickets_cache.jsonl.gz")
@@ -110,12 +122,20 @@ def _build_record(issue: dict) -> dict:
 
     description = _extract_text(f.get("description"))[:MAX_DESC_CHARS]
 
+    # Keep ALL comments with author + timestamp so we can tell the full conversation
+    # and distinguish customer messages from agent resolutions
     comments_raw = (f.get("comment") or {}).get("comments", [])
-    comments = [
-        _extract_text(c.get("body"))[:MAX_COMMENT_CHARS]
-        for c in comments_raw
-        if _extract_text(c.get("body")).strip()
-    ]
+    comments = []
+    for c in comments_raw:
+        body = _extract_text(c.get("body")).strip()
+        if not body:
+            continue
+        author = (c.get("author") or {}).get("displayName", "")
+        comments.append({
+            "author":  author,
+            "created": c.get("created", ""),
+            "body":    body[:MAX_COMMENT_CHARS],
+        })
 
     # multi-select product → first value only for simplicity
     product_field = f.get("customfield_10158") or []
@@ -124,19 +144,27 @@ def _build_record(issue: dict) -> dict:
     org_field = f.get("customfield_10002") or []
     org = org_field[0].get("name", "") if org_field else ""
 
+    labels = f.get("labels") or []
+
     return {
-        "key":         issue["key"],
-        "summary":     f.get("summary", ""),
-        "description": description,
-        "topic":       (f.get("customfield_10170") or {}).get("value", ""),
-        "root_cause":  (f.get("customfield_10201") or {}).get("value", ""),
-        "resolution":  (f.get("resolution") or {}).get("name", ""),
-        "product":     product,
-        "org":         org,
-        "created":     f.get("created", ""),
-        "updated":     f.get("updated", ""),
-        "comments":    comments,
-        "cached_at":   datetime.now(timezone.utc).isoformat(),
+        "key":           issue["key"],
+        "summary":       f.get("summary", ""),
+        "description":   description,
+        "topic":         (f.get("customfield_10170") or {}).get("value", ""),
+        "root_cause":    (f.get("customfield_10201") or {}).get("value", ""),
+        "resolution":    (f.get("resolution") or {}).get("name", ""),
+        "status":        (f.get("status") or {}).get("name", ""),
+        "issuetype":     (f.get("issuetype") or {}).get("name", ""),
+        "support_level": (f.get("customfield_10186") or {}).get("value", ""),
+        "severity":      (f.get("customfield_10036") or {}).get("value", ""),
+        "type_of_work":  (f.get("customfield_10143") or {}).get("value", ""),
+        "labels":        labels,
+        "product":       product,
+        "org":           org,
+        "created":       f.get("created", ""),
+        "updated":       f.get("updated", ""),
+        "comments":      comments,
+        "cached_at":     datetime.now(timezone.utc).isoformat(),
     }
 
 
