@@ -16,14 +16,10 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 
-VALIDATOR_MODEL = "gpt-4o-mini"
+VALIDATOR_MODEL = "claude-sonnet-4.5"
 MAX_TOKENS = 512
 
 # GitHub Copilot Business endpoint (confirmed from subscription API).
-# NOTE: claude-sonnet-4.5 and other premium models count against the
-# 300/month premium_interactions quota. gpt-4o-mini is a standard model
-# (unlimited) and is sufficient for proposal auditing.
-# Change VALIDATOR_MODEL to a premium model only after quota resets (May 1).
 COPILOT_BASE_URL = "https://api.business.githubcopilot.com"
 
 
