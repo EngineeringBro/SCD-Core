@@ -76,6 +76,7 @@ FIELDS = [
     "customfield_10186",   # Support Level
     "customfield_10036",   # Severity Level
     "customfield_10146",   # RepairQ Ticket Link
+    "customfield_10033",   # Reporter email (as submitted via portal)
 ]
 
 OUTPUT_FILE     = Path("knowledge/tickets_cache.jsonl.gz")
@@ -169,7 +170,9 @@ def _build_record(issue: dict) -> dict:
         "status":         (f.get("status") or {}).get("name", ""),
         "issuetype":      (f.get("issuetype") or {}).get("name", ""),
         "assignee":       (f.get("assignee") or {}).get("displayName", ""),
+        "assignee_email": (f.get("assignee") or {}).get("emailAddress", ""),
         "reporter":       (f.get("reporter") or {}).get("displayName", ""),
+        "reporter_email": (f.get("reporter") or {}).get("emailAddress", "") or f.get("customfield_10033", ""),
         "support_level":  (f.get("customfield_10186") or {}).get("value", ""),
         "severity":       (f.get("customfield_10036") or {}).get("value", ""),
         "type_of_work":   (f.get("customfield_10143") or {}).get("value", ""),
