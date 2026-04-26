@@ -8,6 +8,7 @@ for the incoming ticket.
 from __future__ import annotations
 import json
 import os
+from pathlib import Path
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from modules.general_module.core_cx_retriever import Candidate
 
@@ -83,6 +84,33 @@ def judge(
         return None
 
 
+def _load_field_options() -> str:
+    """
+    Load jira_fields.yaml and return a compact reference block listing
+    the selectable options for Topic Field, Root Cause, and Product.
+    The LLM uses these IDs when producing jira_field_update actions.
+    """
+    try:
+        import yaml
+        config_path = Path("configs/jira_fields.yaml")
+        if not config_path.exists():
+            return ""
+        with open(config_path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        fields_cfg = cfg.get("fields", {})
+        lines = ["AVAILABLE JIRA FIELD OPTIONS (use these exact IDs in jira_field_update payloads):"]
+        for field_id, meta in fields_cfg.items():
+            opts = meta.get("options")
+            if not opts:
+                continue
+            lines.append(f"  {field_id} ({meta.get('name', field_id)}):")
+            for opt_id, opt_name in opts.items():
+                lines.append(f"    id={opt_id}  label=\"{opt_name}\"")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _build_prompt(ticket: dict, candidates: list[Candidate], learned_guidance: str | None = None) -> str:
     fields = ticket.get("fields", {})
     summary = fields.get("summary", "")
@@ -112,6 +140,8 @@ raise your confidence level significantly.
 --- END HUMAN GUIDANCE ---
 """
 
+    field_options_block = _load_field_options()
+
     return f"""INCOMING TICKET:
 - ID: {ticket.get("key")}
 - Summary: {summary}
@@ -120,6 +150,8 @@ raise your confidence level significantly.
 {guidance_block}
 REFERENCE CASES (top matches from closed tickets and knowledge base):
 {references}
+
+{field_options_block}
 
 Produce a resolution plan in this exact JSON format:
 {{
@@ -142,6 +174,8 @@ Rules:
 - Only use action types listed above
 - Maximum 5 actions
 - reference_ids must be the REF-N labels from the list above
+- For jira_field_update actions: payload must include {{"field": "<customfield_id>", "value": <option_id_as_integer>}}
+- Use the AVAILABLE JIRA FIELD OPTIONS above to select the most appropriate option IDs
 - If uncertain about any destructive action, use notification_log_append with a detailed note instead"""
 
 

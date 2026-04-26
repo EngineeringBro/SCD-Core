@@ -146,7 +146,7 @@ def run() -> None:
         # for this topic, the module's raw score is irrelevant; we trust the guidance.
         # Only apply the floor if Brain 1 didn’t raise blocking flags (flags that indicate
         # the guidance contradicts the proposed actions or something is critically wrong).
-        GUIDANCE_CONFIDENCE_FLOOR = 0.85
+        GUIDANCE_CONFIDENCE_FLOOR = 0.93
         if learned_guidance and not analysis.skipped:
             blocking = [f for f in analysis.flags if any(w in f.upper() for w in ("WRONG", "CRITICAL", "CONTRADICT", "MISMATCH"))]
             if not blocking:
