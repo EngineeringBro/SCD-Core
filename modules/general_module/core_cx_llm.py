@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from modules.general_module.core_cx_retriever import Candidate
+from modules.general_module.core_cx_reranker import ScoredCandidate
 
 try:
     from openai import OpenAI
@@ -24,13 +25,15 @@ MAX_TOKENS = 1200
 
 def judge(
     ticket: dict,
-    candidates: list[Candidate],
+    candidates: list[ScoredCandidate],
     module_name: str = "general",
     module_version: str = "2.0.0",
     learned_guidance: str | None = None,
 ) -> ResolutionSuggestion | None:
     """
     Call Claude Sonnet with the ticket + top reference cases.
+    Confidence is computed mechanically from evidence signals (BM25 scores,
+    candidate count, human guidance) — NOT taken from the LLM's own estimate.
     Returns a ResolutionSuggestion, or None if the LLM is unavailable or fails.
     """
     gh_token = os.environ.get("COPILOT_TOKEN", "")
@@ -39,7 +42,8 @@ def judge(
         return None
 
     client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
-    prompt = _build_prompt(ticket, candidates, learned_guidance=learned_guidance)
+    raw_candidates = [sc.candidate for sc in candidates]
+    prompt = _build_prompt(ticket, raw_candidates, learned_guidance=learned_guidance)
 
     try:
         response = client.chat.completions.create(
@@ -74,7 +78,9 @@ def judge(
 
     try:
         parsed = json.loads(stripped)
-        suggestion = _build_suggestion(ticket, parsed, candidates, module_name, module_version)
+        # Compute evidence-based confidence — NOT from LLM's own guess
+        confidence = _compute_confidence(candidates, has_guidance=bool(learned_guidance))
+        suggestion = _build_suggestion(ticket, parsed, raw_candidates, module_name, module_version, confidence)
         # Note: topic is stamped on all suggestions by the orchestrator after module.run()
         if learned_guidance:
             suggestion.sub_agent_attribution["guidance_applied"] = True
@@ -82,6 +88,37 @@ def judge(
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
         print(f"[cx_llm] Failed to parse LLM response: {exc}")
         return None
+
+
+def _compute_confidence(candidates: list[ScoredCandidate], has_guidance: bool) -> float:
+    """
+    Compute a confidence score purely from evidence signals.
+    Scale: 0.0 (no idea) → 1.0 (certain).
+
+    Signals:
+      - Human guidance exists for this topic       (+0.50)
+      - Best BM25 relative score (0.0 – 1.0)       × 0.30
+      - Candidate breadth (1 – 5+)                 up to +0.10
+
+    Max without guidance: ~0.40   → always LOW CONFIDENCE (correct)
+    With guidance + strong matches: up to 0.90+    → ready to execute
+    """
+    guidance_pts = 0.50 if has_guidance else 0.0
+
+    if candidates:
+        best_relative = max(sc.relative_score for sc in candidates)  # already 0–1
+        match_pts = best_relative * 0.30
+        breadth = min(len(candidates), 5)
+        breadth_pts = (breadth / 5) * 0.10
+    else:
+        match_pts = 0.0
+        breadth_pts = 0.0
+
+    raw = guidance_pts + match_pts + breadth_pts
+    score = round(min(raw, 0.97), 2)  # never claim 100% — humans decide
+    print(f"[cx_llm] Evidence confidence: guidance={guidance_pts:.2f} "
+          f"match={match_pts:.2f} breadth={breadth_pts:.2f} → {score:.0%}")
+    return score
 
 
 def _load_field_options() -> str:
@@ -185,6 +222,7 @@ def _build_suggestion(
     candidates: list[Candidate],
     module_name: str,
     module_version: str,
+    confidence: float,
 ) -> ResolutionSuggestion:
     ticket_id = ticket["key"]
     fields = ticket.get("fields", {})
@@ -238,7 +276,7 @@ def _build_suggestion(
             ),
         ],
         actions=actions,
-        module_confidence=float(parsed.get("confidence", 0.5)),
+        module_confidence=confidence,  # evidence-based, not LLM's guess
         module_notes=(
             f"CX LLM ({MODEL}). "
             f"References used: {', '.join(ref_ids) or 'none'}. "

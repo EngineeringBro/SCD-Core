@@ -9,11 +9,19 @@ from __future__ import annotations
 import math
 import os
 import re
+from dataclasses import dataclass
 from modules.general_module.core_cx_retriever import Candidate
 
 # BM25 hyperparameters
 K1 = 1.5    # term frequency saturation
 B = 0.75    # length normalization
+
+
+@dataclass
+class ScoredCandidate:
+    candidate: Candidate
+    bm25_score: float      # raw BM25 score
+    relative_score: float  # fraction of best score (0.0 – 1.0)
 
 _STOP_WORDS = {
     "a", "an", "the", "is", "it", "in", "on", "at", "to", "for",
@@ -36,17 +44,17 @@ def _query_tokens(ticket: dict) -> list[str]:
     return _tokenize(f"{summary} {topic}")
 
 
-def rerank(candidates: list[Candidate], ticket: dict, top_k: int = 5) -> list[Candidate]:
+def rerank(candidates: list[Candidate], ticket: dict, top_k: int = 5) -> list[ScoredCandidate]:
     """
-    BM25-score all candidates against the ticket, return top_k.
-    Falls back to candidates[:top_k] if corpus is too small to score.
+    BM25-score all candidates against the ticket, return top_k as ScoredCandidate.
+    Falls back to wrapping candidates[:top_k] with score=0 if corpus is too small.
     """
     if not candidates:
         return []
 
     query_terms = _query_tokens(ticket)
     if not query_terms:
-        return candidates[:top_k]
+        return [ScoredCandidate(c, 0.0, 0.0) for c in candidates[:top_k]]
 
     # Tokenize all documents
     doc_tokens: list[list[str]] = [_tokenize(f"{c.title} {c.body}") for c in candidates]
@@ -97,11 +105,11 @@ def rerank(candidates: list[Candidate], ticket: dict, top_k: int = 5) -> list[Ca
     for score, candidate in scored[:top_k]:
         relative = score / best_score if best_score > 0 else 0.0
         if relative >= min_relevance:
-            top.append((score, relative, candidate))
+            top.append(ScoredCandidate(candidate, score, relative))
 
     print(
         f"[cx_reranker] {len(top)}/{len(scored)} candidates passed threshold "
         f"(min_relevance={min_relevance}, "
-        f"scores: {[round(s, 2) for s, _, _ in top]})"
+        f"scores: {[round(s.bm25_score, 2) for s in top]})"
     )
-    return [c for _, _, c in top]
+    return top
