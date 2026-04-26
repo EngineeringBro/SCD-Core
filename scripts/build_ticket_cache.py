@@ -72,7 +72,7 @@ def _count_total(jira: JiraReadClient) -> int:
         "maxResults": 0,
         "fields": "summary",
     })
-    data = jira._get(f"/rest/api/3/issue/search?{params}")
+    data = jira._get(f"/rest/api/2/search?{params}")
     return data.get("total", 0)
 
 
@@ -83,7 +83,7 @@ def _fetch_page(jira: JiraReadClient, start_at: int) -> list[dict]:
         "maxResults": PAGE_SIZE,
         "fields": ",".join(FIELDS),
     })
-    data = jira._get(f"/rest/api/3/issue/search?{params}")
+    data = jira._get(f"/rest/api/2/search?{params}")
     return data.get("issues", [])
 
 

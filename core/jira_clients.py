@@ -55,7 +55,10 @@ class _JiraBase:
             "maxResults": max_results,
             "fields": ",".join(fields) if fields else "*all",
         })
-        data = self._get(f"/rest/api/3/issue/search?{params}")
+        # Use REST API v2 search endpoint — compatible with both Jira Cloud and Data Center.
+        # v3 uses /rest/api/3/issue/search but on Data Center that path is interpreted
+        # as a direct issue lookup for key "search" → 404.
+        data = self._get(f"/rest/api/2/search?{params}")
         return data.get("issues", [])
 
 
