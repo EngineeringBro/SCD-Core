@@ -34,7 +34,6 @@ import json
 import os
 import sys
 import time
-import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -67,23 +66,17 @@ PROGRESS_FILE   = Path("knowledge/cache_progress.json")
 # ── Jira helpers ───────────────────────────────────────────────────────────────
 
 def _count_total(jira: JiraReadClient) -> int:
-    params = urllib.parse.urlencode({
-        "jql": JQL,
-        "maxResults": 0,
-        "fields": "summary",
-    })
-    data = jira._get(f"/rest/api/2/search?{params}")
+    data = jira._search_jql({"jql": JQL, "maxResults": 0, "fields": ["summary"]})
     return data.get("total", 0)
 
 
 def _fetch_page(jira: JiraReadClient, start_at: int) -> list[dict]:
-    params = urllib.parse.urlencode({
-        "jql": JQL,
-        "startAt": start_at,
+    data = jira._search_jql({
+        "jql":        JQL,
+        "startAt":    start_at,
         "maxResults": PAGE_SIZE,
-        "fields": ",".join(FIELDS),
+        "fields":     FIELDS,
     })
-    data = jira._get(f"/rest/api/2/search?{params}")
     return data.get("issues", [])
 
 

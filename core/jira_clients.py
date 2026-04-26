@@ -39,6 +39,16 @@ class _JiraBase:
             body = e.read().decode(errors="replace")[:500]
             raise RuntimeError(f"Jira API {e.code} on {url[:100]}: {body}") from e
 
+    def _search_jql(self, payload: dict) -> dict:
+        """GET /rest/api/3/search/jql — the current Jira Cloud search endpoint."""
+        params = urllib.parse.urlencode({
+            "jql":        payload["jql"],
+            "maxResults": payload.get("maxResults", 50),
+            "startAt":    payload.get("startAt", 0),
+            "fields":     ",".join(payload["fields"]) if isinstance(payload.get("fields"), list) else (payload.get("fields") or "*all"),
+        })
+        return self._get(f"/rest/api/3/search/jql?{params}")
+
     def get_issue(self, ticket_id: str, fields: list[str] | None = None) -> dict:
         if fields:
             params = urllib.parse.urlencode({"fields": ",".join(fields)})
@@ -50,15 +60,7 @@ class _JiraBase:
         return data.get("comments", [])
 
     def search(self, jql: str, fields: list[str] | None = None, max_results: int = 50) -> list:
-        params = urllib.parse.urlencode({
-            "jql": jql,
-            "maxResults": max_results,
-            "fields": ",".join(fields) if fields else "*all",
-        })
-        # Use REST API v2 search endpoint — compatible with both Jira Cloud and Data Center.
-        # v3 uses /rest/api/3/issue/search but on Data Center that path is interpreted
-        # as a direct issue lookup for key "search" → 404.
-        data = self._get(f"/rest/api/2/search?{params}")
+        data = self._search_jql({"jql": jql, "maxResults": max_results, "fields": fields or ["*all"]})
         return data.get("issues", [])
 
 
