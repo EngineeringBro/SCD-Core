@@ -14,6 +14,10 @@ on:
         required: false
         default: ''
 
+permissions:
+  issues: write      # post_proposal() creates GitHub Issues
+  contents: read
+
 jobs:
   scan-and-propose:
     name: Scan & Propose
