@@ -142,6 +142,23 @@ def run() -> None:
             print(f"[orchestrator] {ticket_id}: Brain1 flags — {analysis.flags}")
         print(f"[orchestrator] {ticket_id}: Brain1 analysis {'applied' if not analysis.skipped else 'skipped'}")
 
+        # Guidance confidence floor — when a human has already told us exactly what to do
+        # for this topic, the module's raw score is irrelevant; we trust the guidance.
+        # Only apply the floor if Brain 1 didn’t raise blocking flags (flags that indicate
+        # the guidance contradicts the proposed actions or something is critically wrong).
+        GUIDANCE_CONFIDENCE_FLOOR = 0.85
+        if learned_guidance and not analysis.skipped:
+            blocking = [f for f in analysis.flags if any(w in f.upper() for w in ("WRONG", "CRITICAL", "CONTRADICT", "MISMATCH"))]
+            if not blocking:
+                if suggestion.module_confidence < GUIDANCE_CONFIDENCE_FLOOR:
+                    print(
+                        f"[orchestrator] {ticket_id}: guidance floor applied — "
+                        f"{suggestion.module_confidence:.0%} → {GUIDANCE_CONFIDENCE_FLOOR:.0%}"
+                    )
+                    suggestion.module_confidence = GUIDANCE_CONFIDENCE_FLOOR
+            else:
+                print(f"[orchestrator] {ticket_id}: guidance floor skipped — blocking flags: {blocking}")
+
         # Brain 2 — Gatekeeper (passes source ticket_id to guard against prompt injection)
         gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
         print(f"[orchestrator] {ticket_id}: gatekeeper => {gate_result.verdict}")
