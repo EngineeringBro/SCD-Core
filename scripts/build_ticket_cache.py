@@ -65,20 +65,17 @@ PROGRESS_FILE   = Path("knowledge/cache_progress.json")
 
 # ── Jira helpers ───────────────────────────────────────────────────────────────
 
-def _count_total(jira: JiraReadClient) -> int:
-    # /rest/api/3/search/jql requires maxResults >= 1; use 1 and read the total field
-    data = jira._search_jql({"jql": JQL, "maxResults": 1, "fields": ["summary"]})
-    return data.get("total", 0)
-
-
-def _fetch_page(jira: JiraReadClient, start_at: int) -> list[dict]:
-    data = jira._search_jql({
+def _fetch_page(jira: JiraReadClient, next_page_token: str | None, page_size: int) -> tuple[list[dict], str | None]:
+    """Fetch one page. Returns (issues, next_page_token). next_page_token=None means last page."""
+    payload: dict = {
         "jql":        JQL,
-        "startAt":    start_at,
-        "maxResults": PAGE_SIZE,
+        "maxResults": page_size,
         "fields":     FIELDS,
-    })
-    return data.get("issues", [])
+    }
+    if next_page_token:
+        payload["nextPageToken"] = next_page_token
+    data = jira._search_jql(payload)
+    return data.get("issues", []), data.get("nextPageToken")
 
 
 # ── ADF text extraction ────────────────────────────────────────────────────────
@@ -165,89 +162,54 @@ def _save_progress(start_at: int, written: int, total: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build SCD ticket cache")
     parser.add_argument("--resume", action="store_true",
-                        help="Continue from last checkpoint instead of starting fresh")
+                        help="Note: resume not supported with cursor pagination — starts fresh")
     args = parser.parse_args()
 
     jira = JiraReadClient()
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    # Count total first so we know what we're dealing with
-    print("[cache] Counting closed SCD tickets...")
-    total = _count_total(jira)
-    print(f"[cache] Total closed tickets: {total:,}")
-    # Apply cap
-    if MAX_TICKETS > 0:
-        total = min(total, MAX_TICKETS)
-        print(f"[cache] Capping to most recent {MAX_TICKETS:,} tickets (set MAX_CACHE_TICKETS=0 for all)")
-    pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-    est_minutes = round(pages * (RATE_DELAY + 0.8) / 60, 1)
-    print(f"[cache] Pages to fetch: {pages} | Estimated time: ~{est_minutes} min")
+    cap = MAX_TICKETS if MAX_TICKETS > 0 else 999_999
+    print(f"[cache] Fetching up to {cap:,} closed SCD tickets (cursor pagination)")
 
-    if args.resume and PROGRESS_FILE.exists():
-        progress = _load_progress()
-        start_at = progress["start_at"]
-        written  = progress["written"]
-        print(f"[cache] Resuming from startAt={start_at} ({written:,} already written)")
-        file_mode = "ab"   # append to existing gz
-    else:
-        start_at = 0
-        written  = 0
-        print("[cache] Starting fresh build")
-        file_mode = "wb"   # overwrite
-
-    errors = 0
-    start_time = time.time()
+    written        = 0
+    errors         = 0
+    next_token: str | None = None
+    start_time     = time.time()
+    file_mode      = "wb"
 
     with gzip.open(OUTPUT_FILE, file_mode) as gz:
-        while start_at < total:
+        while written < cap:
+            page_size = min(PAGE_SIZE, cap - written)
             try:
-                issues = _fetch_page(jira, start_at)
+                issues, next_token = _fetch_page(jira, next_token, page_size)
             except Exception as exc:
-                print(f"  [error] Page startAt={start_at} failed: {exc}")
+                print(f"  [error] Page failed: {exc}")
                 errors += 1
                 if errors >= 5:
-                    print("[cache] Too many consecutive errors — aborting. Run with --resume to continue.")
-                    _save_progress(start_at, written, total)
+                    print("[cache] Too many consecutive errors — aborting.")
                     sys.exit(1)
                 time.sleep(5)
                 continue
 
-            errors = 0  # reset consecutive error count on success
+            errors = 0
+
+            if not issues:
+                break
 
             for issue in issues:
                 try:
                     record = _build_record(issue)
-                    line = json.dumps(record, ensure_ascii=False) + "\n"
-                    gz.write(line.encode("utf-8"))
+                    gz.write((json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8"))
                     written += 1
                 except Exception as exc:
                     print(f"  [warn] Skipping {issue.get('key', '?')}: {exc}")
 
-            start_at += len(issues)
-
-            # Stop once we've collected enough tickets
-            if MAX_TICKETS > 0 and start_at >= MAX_TICKETS:
-                print(f"[cache] Reached cap of {MAX_TICKETS:,} tickets — stopping")
-                break
-
             elapsed = time.time() - start_time
-            pct = (start_at / total * 100) if total else 0
-            speed = written / elapsed if elapsed > 0 else 0
-            remaining = (total - start_at) / speed if speed > 0 else 0
-            print(
-                f"[cache] {start_at:,}/{total:,} ({pct:.1f}%) | "
-                f"written={written:,} | "
-                f"elapsed={elapsed/60:.1f}m | "
-                f"eta={remaining/60:.1f}m"
-            )
+            print(f"[cache] written={written:,} | elapsed={elapsed:.1f}s | next_token={'yes' if next_token else 'end'}")
 
-            # Save checkpoint periodically
-            if written % CHECKPOINT_EVERY == 0:
-                _save_progress(start_at, written, total)
-
-            if not issues:
-                break   # Jira returned empty page — we're done
+            if not next_token:
+                break
 
             time.sleep(RATE_DELAY)
 

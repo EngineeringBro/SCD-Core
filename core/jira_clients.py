@@ -40,14 +40,15 @@ class _JiraBase:
             raise RuntimeError(f"Jira API {e.code} on {url[:100]}: {body}") from e
 
     def _search_jql(self, payload: dict) -> dict:
-        """GET /rest/api/3/search/jql — the current Jira Cloud search endpoint."""
-        params = urllib.parse.urlencode({
+        """GET /rest/api/3/search/jql — current Jira Cloud search endpoint (cursor pagination)."""
+        params: dict = {
             "jql":        payload["jql"],
             "maxResults": payload.get("maxResults", 50),
-            "startAt":    payload.get("startAt", 0),
             "fields":     ",".join(payload["fields"]) if isinstance(payload.get("fields"), list) else (payload.get("fields") or "*all"),
-        })
-        return self._get(f"/rest/api/3/search/jql?{params}")
+        }
+        if payload.get("nextPageToken"):
+            params["nextPageToken"] = payload["nextPageToken"]
+        return self._get(f"/rest/api/3/search/jql?{urllib.parse.urlencode(params)}")
 
     def get_issue(self, ticket_id: str, fields: list[str] | None = None) -> dict:
         if fields:
