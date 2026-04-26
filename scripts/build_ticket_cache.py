@@ -59,7 +59,7 @@ from core.jira_clients import JiraReadClient  # noqa: E402
 PAGE_SIZE         = 100       # tickets per JQL page (Jira max = 100)
 RATE_DELAY        = 0.15      # seconds between page requests (avoids rate limiting)
 MAX_DESC_CHARS    = 2000      # truncate description text
-MAX_COMMENT_CHARS = 1500      # truncate each comment body (captures full resolutions)
+MAX_COMMENT_CHARS = 10000     # truncate each comment body (captures full resolutions)
 CHECKPOINT_EVERY  = 500      # save checkpoint every N tickets processed
 MAX_TICKETS       = int(os.environ.get("MAX_CACHE_TICKETS", "1000"))  # 0 = unlimited
 JQL = "project = SCD AND resolution is not EMPTY ORDER BY updated DESC"
