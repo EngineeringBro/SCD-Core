@@ -39,7 +39,10 @@ class _JiraBase:
             body = e.read().decode(errors="replace")[:500]
             raise RuntimeError(f"Jira API {e.code} on {url[:100]}: {body}") from e
 
-    def get_issue(self, ticket_id: str) -> dict:
+    def get_issue(self, ticket_id: str, fields: list[str] | None = None) -> dict:
+        if fields:
+            params = urllib.parse.urlencode({"fields": ",".join(fields)})
+            return self._get(f"/rest/api/3/issue/{ticket_id}?{params}")
         return self._get(f"/rest/api/3/issue/{ticket_id}")
 
     def get_comments(self, ticket_id: str) -> list:

@@ -67,11 +67,12 @@ def run() -> None:
 
     print(f"[orchestrator] Modules loaded: {list(module_map.keys())}")
 
-    # Build JQL — single-ticket mode if SCAN_TICKET_ID is set (for safe testing)
+    # Single-ticket mode: fetch directly by key (bypasses JQL search index — more reliable for JSM)
     scan_ticket_id = os.environ.get("SCAN_TICKET_ID", "").strip()
     if scan_ticket_id:
-        jql = f'project = SCD AND key = "{scan_ticket_id}"'
         print(f"[orchestrator] Single-ticket mode: {scan_ticket_id}")
+        raw = jira.get_issue(scan_ticket_id, fields=FIELDS)
+        tickets = [raw]
     else:
         last_run = current_state.get("last_run")
         jql = JQL_BASE
@@ -82,9 +83,9 @@ def run() -> None:
                 f'AND assignee is EMPTY AND updated >= "{date_part}" '
                 f'ORDER BY created ASC'
             )
+        print(f"[orchestrator] JQL: {jql}")
+        tickets = jira.search(jql, fields=FIELDS, max_results=100)
 
-    print(f"[orchestrator] JQL: {jql}")
-    tickets = jira.search(jql, fields=FIELDS, max_results=100)
     print(f"[orchestrator] {len(tickets)} ticket(s) returned")
 
     proposals_posted = 0
