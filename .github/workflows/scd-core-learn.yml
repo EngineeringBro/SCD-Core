@@ -1,0 +1,76 @@
+name: "SCD Core — Learn from Guidance"
+
+# Fires whenever a human comments on an issue tagged scd-guidance-needed
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  learn:
+    # Skip bot comments; only process issues carrying the guidance label
+    if: |
+      github.event.comment.user.type != 'Bot' &&
+      contains(github.event.issue.labels.*.name, 'scd-guidance-needed')
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # commit knowledge/ updates back to main
+      issues: write     # swap labels + post confirmation comment
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install "PyYAML>=6.0"
+
+      # Pull the **Topic** line out of the issue body.
+      # Issue body contains a Markdown table row like:
+      #   | **Topic** | Transaction Errors |
+      - name: Extract topic from issue body
+        id: topic
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          topic=$(echo "$ISSUE_BODY" \
+            | grep -oP '(?<=\| \*\*Topic\*\* \| ).*(?= \|)' \
+            | head -1 \
+            | sed 's/[[:space:]]*$//')
+          echo "value=$topic" >> "$GITHUB_OUTPUT"
+
+      - name: Save guidance to knowledge store
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_TITLE:  ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENTER:    ${{ github.event.comment.user.login }}
+          TOPIC:        ${{ steps.topic.outputs.value }}
+        run: python scripts/save_guidance.py
+
+      - name: Commit knowledge update
+        run: |
+          git config user.name  "scd-core-bot"
+          git config user.email "scd-core-bot@users.noreply.github.com"
+          git add knowledge/
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "learn: guidance for issue #${{ github.event.issue.number }} by @${{ github.event.comment.user.login }}"
+            git push
+          fi
+
+      - name: Mark issue as guidance captured
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --remove-label "scd-guidance-needed" \
+            --add-label "scd-guidance-captured"
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "✅ **Guidance captured.** Saved to the knowledge store — future tickets on this topic will benefit from your input."

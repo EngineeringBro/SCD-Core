@@ -13,6 +13,9 @@ from dataclasses import asdict
 
 
 LABELS = ["scd-proposal", "awaiting-approval"]
+GUIDANCE_LABEL = "scd-guidance-needed"   # added when module_confidence < 0.9
+CAPTURED_LABEL = "scd-guidance-captured"  # applied by the learn workflow after capture
+CONFIDENCE_THRESHOLD = 0.9              # below this → ask human for guidance
 REPO_ENV_VAR = "GITHUB_REPOSITORY"   # set automatically by GitHub Actions (owner/repo)
 GH_TOKEN_VAR = "GH_TOKEN"            # auto-injected Actions token — used only for GitHub Issues API
 
@@ -49,14 +52,22 @@ def post_proposal(
     url = f"https://api.github.com/repos/{repo}/issues"
 
     verdict = getattr(validator_result, 'verdict', 'SKIPPED')
-    title = f"[{verdict}] SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
+    low_confidence = suggestion.module_confidence < CONFIDENCE_THRESHOLD
 
-    body = _build_body(suggestion, gate_summary, validator_result)
+    # Surface confidence in title so humans can spot low-confidence proposals at a glance
+    confidence_prefix = "[LOW CONFIDENCE] " if low_confidence else ""
+    title = f"{confidence_prefix}[{verdict}] SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
+
+    body = _build_body(suggestion, gate_summary, validator_result, low_confidence=low_confidence)
+
+    labels = list(LABELS)
+    if low_confidence:
+        labels.append(GUIDANCE_LABEL)
 
     payload = {
         "title": title,
         "body": body,
-        "labels": LABELS,
+        "labels": labels,
     }
 
     data = json.dumps(payload).encode()
@@ -107,6 +118,7 @@ def _build_body(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
     validator_result,
+    low_confidence: bool = False,
 ) -> str:
     # Brain 3 output
     verdict = getattr(validator_result, 'verdict', 'SKIPPED')
@@ -146,6 +158,35 @@ def _build_body(
         f"{overall_notes}"
     )
 
+    # Topic for knowledge-store matching (extracted from Jira Topic field)
+    topic_field = (suggestion.sub_agent_attribution or {}).get("topic", "Unknown")
+
+    guidance_section = ""
+    if low_confidence:
+        guidance_section = f"""
+---
+## ⚠️ Guidance Needed — Confidence Below {int(CONFIDENCE_THRESHOLD * 100)}%
+
+| Field | Value |
+|-------|-------|
+| **Confidence** | {suggestion.module_confidence:.0%} |
+| **Topic** | {topic_field} |
+| **Ticket** | {suggestion.ticket_id} |
+
+The agent is **not confident enough** to act on this ticket autonomously.
+
+**Please reply to this issue with the correct resolution approach.**
+Your answer will be saved to the knowledge store and will:
+- Raise confidence for future tickets on this topic
+- Reduce how often you need to provide manual guidance over time
+
+Example guidance:
+> "For tickets like this, the correct action is to post an internal comment explaining X, then transition to Waiting for Customer."
+
+> [!NOTE]
+> After you comment, the **SCD Core — Learn from Guidance** workflow will capture your input automatically and close this guidance request.
+"""
+
     return f"""## {verdict_emoji} Brain 3 Verdict: {verdict}
 
 > This is Brain 3 (GPT 5.4)'s independent assessment. **This is what you are approving.**
@@ -175,7 +216,7 @@ Trigger **SCD Core — Execute** with:
 - `ticket_id`: `{suggestion.ticket_id}`
 
 Re-validation runs automatically at execution time.
-
+{guidance_section}
 <details>
 <summary>Brain 1 Raw Output (reference)</summary>
 

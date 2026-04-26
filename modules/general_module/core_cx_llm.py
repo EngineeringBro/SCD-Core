@@ -26,6 +26,7 @@ def judge(
     candidates: list[Candidate],
     module_name: str = "general",
     module_version: str = "2.0.0",
+    learned_guidance: str | None = None,
 ) -> ResolutionSuggestion | None:
     """
     Call Claude Sonnet with the ticket + top reference cases.
@@ -37,7 +38,7 @@ def judge(
         return None
 
     client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
-    prompt = _build_prompt(ticket, candidates)
+    prompt = _build_prompt(ticket, candidates, learned_guidance=learned_guidance)
 
     try:
         response = client.chat.completions.create(
@@ -72,13 +73,20 @@ def judge(
 
     try:
         parsed = json.loads(stripped)
-        return _build_suggestion(ticket, parsed, candidates, module_name, module_version)
+        suggestion = _build_suggestion(ticket, parsed, candidates, module_name, module_version)
+        # Store topic in sub_agent_attribution so github_issues.py can surface it
+        fields = ticket.get("fields", {})
+        topic = (fields.get("customfield_10170") or {}).get("value", "Unknown")
+        suggestion.sub_agent_attribution["topic"] = topic
+        if learned_guidance:
+            suggestion.sub_agent_attribution["guidance_applied"] = True
+        return suggestion
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
         print(f"[cx_llm] Failed to parse LLM response: {exc}")
         return None
 
 
-def _build_prompt(ticket: dict, candidates: list[Candidate]) -> str:
+def _build_prompt(ticket: dict, candidates: list[Candidate], learned_guidance: str | None = None) -> str:
     fields = ticket.get("fields", {})
     summary = fields.get("summary", "")
     status = (fields.get("status") or {}).get("name", "")
@@ -94,12 +102,25 @@ def _build_prompt(ticket: dict, candidates: list[Candidate]) -> str:
         )
     references = "\n\n".join(ref_sections) if ref_sections else "No reference cases available."
 
+    # Human-verified guidance block — authoritative, overrides reference-based guessing
+    guidance_block = ""
+    if learned_guidance:
+        guidance_block = f"""
+--- AUTHORITATIVE HUMAN GUIDANCE ---
+The following guidance was provided by a human expert for tickets with this topic.
+Treat this as the most reliable input — it should directly inform your actions and
+raise your confidence level significantly.
+
+{learned_guidance}
+--- END HUMAN GUIDANCE ---
+"""
+
     return f"""INCOMING TICKET:
 - ID: {ticket.get("key")}
 - Summary: {summary}
 - Status: {status}
 - Topic: {topic}
-
+{guidance_block}
 REFERENCE CASES (top matches from closed tickets and knowledge base):
 {references}
 

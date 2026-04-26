@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
+from core.learning_store import get_guidance_text
 from modules.general_module import core_cx_retriever, core_cx_reranker, core_cx_llm
 import os
 
@@ -42,13 +43,17 @@ class GeneralModule(Module):
         top_k = int(os.environ.get("TOP_CANDIDATES", "5"))
         top_candidates = core_cx_reranker.rerank(candidates, ticket, top_k=top_k) if candidates else []
 
-        # Step 3 — LLM judge
+        # Step 3 — LLM judge (inject any saved human guidance for this topic)
         if top_candidates:
+            learned_guidance = get_guidance_text(topic_name)
+            if learned_guidance:
+                print(f"[general] Injecting learned guidance for topic '{topic_name}'")
             suggestion = core_cx_llm.judge(
                 ticket,
                 top_candidates,
                 module_name=self.name,
                 module_version=self.version,
+                learned_guidance=learned_guidance,
             )
             if suggestion:
                 return suggestion
