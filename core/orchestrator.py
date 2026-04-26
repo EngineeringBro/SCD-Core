@@ -119,10 +119,12 @@ def run() -> None:
 
         gate_summary = f"ALLOW ({len(gate_result.checks)} checks passed)"
 
+        # Brain 3 — GPT 5.4 independently reviews and produces refined output
         validator_result = validator_review(suggestion)
-        print(f"[orchestrator] {ticket_id}: validator => {validator_result.verdict}")
+        print(f"[orchestrator] {ticket_id}: Brain3 => {validator_result.verdict}")
 
-        issue_number = post_proposal(suggestion, gate_summary, validator_result.notes)
+        # Human reviews Brain 3's output — pass the full result
+        issue_number = post_proposal(suggestion, gate_summary, validator_result)
         print(f"[orchestrator] {ticket_id}: proposal posted as GitHub Issue #{issue_number}")
 
         state_store.mark_processed(current_state, ticket_id, proposal_issue=issue_number)

@@ -37,18 +37,21 @@ def _repo() -> str:
 def post_proposal(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
-    validator_notes: str,
+    validator_result,
 ) -> int:
     """
     Post the proposal as a GitHub Issue.
+    The body is built around Brain 3 (GPT 5.4)'s refined output — that is
+    what the human reviews and approves. Brain 1 output is shown as reference.
     Returns the created issue number.
     """
     repo = _repo()
     url = f"https://api.github.com/repos/{repo}/issues"
 
-    title = f"[SCD Proposal] {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
+    verdict = getattr(validator_result, 'verdict', 'SKIPPED')
+    title = f"[{verdict}] SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
 
-    body = _build_body(suggestion, gate_summary, validator_notes)
+    body = _build_body(suggestion, gate_summary, validator_result)
 
     payload = {
         "title": title,
@@ -84,66 +87,81 @@ def close_proposal(issue_number: int, comment: str) -> None:
 def _build_body(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
-    validator_notes: str,
+    validator_result,
 ) -> str:
-    actions_md = "\n".join(
-        f"  {a.step}. **{a.type}** — `{json.dumps(a.payload, ensure_ascii=False)}`"
-        for a in suggestion.actions
-    )
+    # Brain 3 output
+    verdict = getattr(validator_result, 'verdict', 'SKIPPED')
+    refined_diagnosis = getattr(validator_result, 'refined_diagnosis', suggestion.diagnosis)
+    overall_notes = getattr(validator_result, 'overall_notes', '')
+    action_assessments = getattr(validator_result, 'action_assessments', [])
+    skipped = getattr(validator_result, 'skipped', False)
+
+    verdict_emoji = {
+        'APPROVED': '✅',
+        'FLAGGED': '🚫',
+        'NEEDS_REVISION': '⚠️',
+        'SKIPPED': '⏭️',
+    }.get(verdict, '❓')
+
+    # Build action table with Brain 3 assessments
+    assessment_map = {a.step: a for a in action_assessments}
+    actions_md = ""
+    for a in suggestion.actions:
+        assessment = assessment_map.get(a.step)
+        status = getattr(assessment, 'status', 'OK') if assessment else '—'
+        note = getattr(assessment, 'note', '') if assessment else ''
+        status_icon = {'OK': '✅', 'RISKY': '⚠️', 'WRONG': '🚫'}.get(status, '—')
+        note_text = f" — {note}" if note else ""
+        actions_md += f"  {a.step}. {status_icon} **{a.type}**{note_text}\n  `{json.dumps(a.payload, ensure_ascii=False)}`\n\n"
 
     evidence_md = "\n".join(
         f"  - `{e.get('source', '?')}`: {e.get('value', '')}"
         for e in suggestion.evidence
     )
 
-    revalidation_md = "\n".join(
-        f"  - `{r.type}`: {json.dumps(r.snapshot)}"
-        for r in suggestion.revalidation_targets
+    brain1_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+
+    brain3_section = (
+        f"> ⏭️ Brain 3 was skipped. Review Brain 1 output directly.\n"
+        if skipped else
+        f"{overall_notes}"
     )
 
-    proposal_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+    return f"""## {verdict_emoji} Brain 3 Verdict: {verdict}
 
-    return f"""## SCD Core Proposal
+> This is Brain 3 (GPT 5.4)'s independent assessment. **This is what you are approving.**
 
 | Field | Value |
 |-------|-------|
 | **Ticket** | {suggestion.ticket_id} |
 | **Module** | `{suggestion.module}` v{suggestion.module_version} |
-| **Confidence** | {suggestion.module_confidence:.0%} |
-| **HMAC** | `{suggestion.hmac_signature[:16]}…` |
+| **Brain 1 Confidence** | {suggestion.module_confidence:.0%} |
+| **Gatekeeper** | {gate_summary} |
 
-### Diagnosis
-{suggestion.diagnosis}
+### Brain 3 Diagnosis
+{refined_diagnosis}
+
+### Brain 3 Action Review
+{actions_md}
+### Brain 3 Notes to Reviewer
+{brain3_section}
 
 ### Evidence
 {evidence_md}
 
-### Proposed Actions
-{actions_md}
-
-### Revalidation Targets
-{revalidation_md}
-
-### Gatekeeper
-{gate_summary}
-
-### Validator Notes
-{validator_notes}
-
 ---
-### Approval Instructions
-To approve and execute, trigger the **SCD Core — Execute** workflow with:
+### ✅ To Approve & Execute
+Trigger **SCD Core — Execute** with:
 - `proposal_issue_number`: this issue number
 - `ticket_id`: `{suggestion.ticket_id}`
 
-**Re-validation runs automatically** at execution time. If the ticket state has changed,
-you will see a diff posted here before execution proceeds.
+Re-validation runs automatically at execution time.
 
 <details>
-<summary>Raw Proposal JSON</summary>
+<summary>Brain 1 Raw Output (reference)</summary>
 
 ```json
-{proposal_json}
+{brain1_json}
 ```
 </details>
 """
