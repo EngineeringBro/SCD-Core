@@ -30,6 +30,7 @@ Each JSONL line:
         "type_of_work": "Bug Fix",
         "labels": ["printing", "mk"],
         "timespent": 3600,             # seconds logged on ticket (null if none)
+        "repairq_link": "https://mobileklinik.repairq.io/ticket/2848448",  # RepairQ ticket URL if set
         "created": "2025-01-15T10:00:00.000+0000",
         "updated": "2025-01-16T08:30:00.000+0000",
         "comments": [
@@ -74,6 +75,7 @@ FIELDS = [
     "customfield_10143",   # Type of Work
     "customfield_10186",   # Support Level
     "customfield_10036",   # Severity Level
+    "customfield_10146",   # RepairQ Ticket Link
 ]
 
 OUTPUT_FILE     = Path("knowledge/tickets_cache.jsonl.gz")
@@ -172,6 +174,7 @@ def _build_record(issue: dict) -> dict:
         "severity":       (f.get("customfield_10036") or {}).get("value", ""),
         "type_of_work":   (f.get("customfield_10143") or {}).get("value", ""),
         "timespent":      f.get("timespent"),  # seconds logged, None if no time logged
+        "repairq_link":   _extract_text(f.get("customfield_10146")) or "",  # RepairQ ticket URL
         "labels":        labels,
         "product":       product,
         "org":           org,
