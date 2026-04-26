@@ -29,17 +29,18 @@ Each JSONL line:
 from __future__ import annotations
 
 import argparse
-import base64
 import gzip
 import json
 import os
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Allow importing from core/ when run as `python scripts/build_ticket_cache.py`
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.jira_clients import JiraReadClient  # noqa: E402
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -65,62 +66,24 @@ PROGRESS_FILE   = Path("knowledge/cache_progress.json")
 
 # ── Jira helpers ───────────────────────────────────────────────────────────────
 
-def _make_headers() -> dict:
-    email = os.environ["JIRA_EMAIL"]
-    token = os.environ["JIRA_API_TOKEN"]
-    creds = base64.b64encode(f"{email}:{token}".encode()).decode()
-    return {
-        "Authorization": f"Basic {creds}",
-        "Accept": "application/json",
-    }
-
-
-def _jira_get(path: str, headers: dict, base: str) -> dict:
-    url = base + path
-    req = urllib.request.Request(url, headers=headers)
-    retries = 3
-    for attempt in range(1, retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                wait = 10 * attempt
-                print(f"  [rate limit] 429 received — waiting {wait}s")
-                time.sleep(wait)
-            elif e.code >= 500 and attempt < retries:
-                print(f"  [retry {attempt}] Server error {e.code} — retrying in 5s")
-                time.sleep(5)
-            else:
-                body = e.read().decode(errors="replace")[:300]
-                raise RuntimeError(f"Jira API {e.code}: {body}") from e
-        except Exception as exc:
-            if attempt < retries:
-                print(f"  [retry {attempt}] {exc} — retrying in 5s")
-                time.sleep(5)
-            else:
-                raise
-    raise RuntimeError("Exhausted retries")
-
-
-def _count_total(headers: dict, base: str) -> int:
+def _count_total(jira: JiraReadClient) -> int:
     params = urllib.parse.urlencode({
         "jql": JQL,
         "maxResults": 0,
         "fields": "summary",
     })
-    data = _jira_get(f"/rest/api/3/issue/search?{params}", headers, base)
+    data = jira._get(f"/rest/api/3/issue/search?{params}")
     return data.get("total", 0)
 
 
-def _fetch_page(start_at: int, headers: dict, base: str) -> list[dict]:
+def _fetch_page(jira: JiraReadClient, start_at: int) -> list[dict]:
     params = urllib.parse.urlencode({
         "jql": JQL,
         "startAt": start_at,
         "maxResults": PAGE_SIZE,
         "fields": ",".join(FIELDS),
     })
-    data = _jira_get(f"/rest/api/3/issue/search?{params}", headers, base)
+    data = jira._get(f"/rest/api/3/issue/search?{params}")
     return data.get("issues", [])
 
 
@@ -211,14 +174,13 @@ def main() -> None:
                         help="Continue from last checkpoint instead of starting fresh")
     args = parser.parse_args()
 
-    base = os.environ["JIRA_BASE_URL"].rstrip("/")
-    headers = _make_headers()
+    jira = JiraReadClient()
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     # Count total first so we know what we're dealing with
     print("[cache] Counting closed SCD tickets...")
-    total = _count_total(headers, base)
+    total = _count_total(jira)
     print(f"[cache] Total closed tickets: {total:,}")
     # Apply cap
     if MAX_TICKETS > 0:
@@ -246,7 +208,7 @@ def main() -> None:
     with gzip.open(OUTPUT_FILE, file_mode) as gz:
         while start_at < total:
             try:
-                issues = _fetch_page(start_at, headers, base)
+                issues = _fetch_page(jira, start_at)
             except Exception as exc:
                 print(f"  [error] Page startAt={start_at} failed: {exc}")
                 errors += 1
