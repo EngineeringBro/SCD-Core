@@ -37,7 +37,7 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}       # auto-injected — GitHub Issues API only (no LLM calls in executor)
           GITHUB_REPO: ${{ github.repository }}
           PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
         run: |

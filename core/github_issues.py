@@ -14,7 +14,7 @@ from dataclasses import asdict
 
 LABELS = ["scd-proposal", "awaiting-approval"]
 REPO_ENV_VAR = "GITHUB_REPOSITORY"   # set automatically by GitHub Actions (owner/repo)
-GH_TOKEN_VAR = "GH_TOKEN"
+GH_TOKEN_VAR = "GH_TOKEN"            # auto-injected Actions token — used only for GitHub Issues API
 
 
 def _headers() -> dict:

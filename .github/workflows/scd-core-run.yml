@@ -34,7 +34,8 @@ jobs:
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           PROPOSAL_HMAC_KEY: ${{ secrets.PROPOSAL_HMAC_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.GH_TOKEN }}     # PAT with Copilot entitlement — Brain 1 + Brain 3 LLM calls
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}       # auto-injected — GitHub Issues API only
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPO: ${{ github.repository }}
         run: python -m core.orchestrator

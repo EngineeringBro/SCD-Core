@@ -37,9 +37,9 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion) -> AnalysisResult:
     Use Claude Sonnet 4.6 to review the ticket and the module's initial
     ResolutionSuggestion. Returns an enriched diagnosis and any flags.
 
-    If GH_TOKEN is not available, returns the module's original diagnosis unchanged.
+    If COPILOT_TOKEN is not available, returns the module's original diagnosis unchanged.
     """
-    gh_token = os.environ.get("GH_TOKEN", "")
+    gh_token = os.environ.get("COPILOT_TOKEN", "")
     if not gh_token or OpenAI is None:
         return AnalysisResult(
             enriched_diagnosis=suggestion.diagnosis,

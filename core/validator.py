@@ -54,7 +54,7 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
     GPT 5.4 independently reviews the proposal and produces its own output.
     The human reviews THIS output, not Brain 1's raw output.
     """
-    gh_token = os.environ.get("GH_TOKEN", "")
+    gh_token = os.environ.get("COPILOT_TOKEN", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
 
     if OpenAI is None:
@@ -65,7 +65,7 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
     elif gh_token:
         client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
     else:
-        return _skipped(suggestion, "neither OPENAI_API_KEY nor GH_TOKEN available")
+        return _skipped(suggestion, "neither OPENAI_API_KEY nor COPILOT_TOKEN available")
 
     prompt = _build_prompt(suggestion)
 
