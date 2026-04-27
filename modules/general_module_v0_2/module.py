@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
-from core.learning_store import get_guidance_text
+from core.learning_store import get_guidance_text, count_verified_guidance
 from modules.general_module_v0_2 import core_cx_retriever, core_cx_reranker, core_cx_llm
 from modules.general_module_v0_2.core_cx_reranker import ScoredCandidate
 import os
@@ -47,14 +47,16 @@ class GeneralModule(Module):
         # Step 3 — LLM judge (inject any saved human guidance for this topic)
         if top_candidates:
             learned_guidance = get_guidance_text(topic_name)
+            verified_count = count_verified_guidance(topic_name)
             if learned_guidance:
-                print(f"[general] Injecting learned guidance for topic '{topic_name}'")
+                print(f"[general] Injecting learned guidance for topic '{topic_name}' (verified={verified_count})")
             suggestion = core_cx_llm.judge(
                 ticket,
                 top_candidates,
                 module_name=self.name,
                 module_version=self.version,
                 learned_guidance=learned_guidance,
+                verified_guidance_count=verified_count,
             )
             if suggestion:
                 return suggestion

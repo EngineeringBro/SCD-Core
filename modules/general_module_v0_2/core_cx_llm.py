@@ -29,6 +29,7 @@ def judge(
     module_name: str = "general",
     module_version: str = "2.0.0",
     learned_guidance: str | None = None,
+    verified_guidance_count: int = 0,
 ) -> ResolutionSuggestion | None:
     """
     Call Claude Sonnet with the ticket + top reference cases.
@@ -79,7 +80,11 @@ def judge(
     try:
         parsed = json.loads(stripped)
         # Compute evidence-based confidence — NOT from LLM's own guess
-        confidence = _compute_confidence(candidates, has_guidance=bool(learned_guidance))
+        confidence = _compute_confidence(
+            candidates,
+            has_guidance=bool(learned_guidance),
+            verified_guidance_count=verified_guidance_count,
+        )
         suggestion = _build_suggestion(ticket, parsed, raw_candidates, module_name, module_version, confidence)
         # Note: topic is stamped on all suggestions by the orchestrator after module.run()
         if learned_guidance:
@@ -90,34 +95,65 @@ def judge(
         return None
 
 
-def _compute_confidence(candidates: list[ScoredCandidate], has_guidance: bool) -> float:
+def _compute_confidence(
+    candidates: list[ScoredCandidate],
+    has_guidance: bool,
+    verified_guidance_count: int = 0,
+) -> float:
     """
     Compute a confidence score purely from evidence signals.
     Scale: 0.0 (no idea) → 1.0 (certain).
 
     Signals:
-      - Human guidance exists for this topic       (+0.50)
-      - Best BM25 relative score (0.0 – 1.0)       × 0.30
-      - Candidate breadth (1 – 5+)                 up to +0.10
+      - Verified guidance (proven correct resolutions)   up to +0.45  (0.15 per entry, max 3)
+      - Unverified guidance (new/untested comments)      +0.20 flat   (first-time human input)
+      - No guidance at all                               +0.00
+      - Best BM25 raw score × 0.25                       (must be ≥ 0.30 to contribute)
+      - Candidate breadth (1 – 5+)                       up to +0.08
 
-    Max without guidance: ~0.40   → always LOW CONFIDENCE (correct)
-    With guidance + strong matches: up to 0.90+    → ready to execute
+    Hard caps:
+      - No verified guidance → max 0.65 (we have never proven this works)
+      - 1+ verified guidance → max 0.88 (proven but still human-in-loop)
+      - 3+ verified guidance + strong match → up to 0.97
+
+    Examples:
+      First-time comment, weak matches   → ~0.20–0.30  (LOW, correct)
+      1 verified + decent matches        → ~0.45–0.65
+      3 verified + strong matches        → ~0.75–0.88
     """
-    guidance_pts = 0.50 if has_guidance else 0.0
+    # Guidance component — only verified entries earn real trust
+    if verified_guidance_count > 0:
+        guidance_pts = min(verified_guidance_count * 0.15, 0.45)
+    elif has_guidance:
+        guidance_pts = 0.20  # unverified: human said something once, treat as weak signal
+    else:
+        guidance_pts = 0.0
 
     if candidates:
-        best_relative = max(sc.relative_score for sc in candidates)  # already 0–1
-        match_pts = best_relative * 0.30
+        best_raw = max(sc.raw_score for sc in candidates) if hasattr(candidates[0], "raw_score") else max(sc.relative_score for sc in candidates)
+        # Only credit match quality if the best score clears the relevance bar
+        match_pts = (best_raw * 0.25) if best_raw >= 0.30 else (best_raw * 0.10)
         breadth = min(len(candidates), 5)
-        breadth_pts = (breadth / 5) * 0.10
+        breadth_pts = (breadth / 5) * 0.08
     else:
         match_pts = 0.0
         breadth_pts = 0.0
 
     raw = guidance_pts + match_pts + breadth_pts
-    score = round(min(raw, 0.97), 2)  # never claim 100% — humans decide
-    print(f"[cx_llm] Evidence confidence: guidance={guidance_pts:.2f} "
-          f"match={match_pts:.2f} breadth={breadth_pts:.2f} → {score:.0%}")
+
+    # Hard cap: no verified guidance = we've never proven this pattern works
+    if verified_guidance_count == 0:
+        cap = 0.65
+    elif verified_guidance_count < 3:
+        cap = 0.88
+    else:
+        cap = 0.97
+
+    score = round(min(raw, cap), 2)
+    print(
+        f"[cx_llm] Evidence confidence: guidance={guidance_pts:.2f} (verified={verified_guidance_count}) "
+        f"match={match_pts:.2f} breadth={breadth_pts:.2f} cap={cap:.0%} → {score:.0%}"
+    )
     return score
 
 

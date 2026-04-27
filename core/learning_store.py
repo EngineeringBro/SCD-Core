@@ -60,8 +60,38 @@ def get_guidance_text(topic: str) -> str | None:
     lines = [f"HUMAN-VERIFIED GUIDANCE ({len(entries)} saved {'entry' if len(entries) == 1 else 'entries'} for topic \"{topic}\"):"]
     for i, e in enumerate(entries, 1):
         by = e.get("provided_by", "unknown")
-        lines.append(f"{i}. [{by}] {e.get('guidance', '').strip()}")
+        verified = " [verified]" if e.get("verified") else " [unverified]"
+        lines.append(f"{i}. [{by}{verified}] {e.get('guidance', '').strip()}")
     return "\n".join(lines)
+
+
+def count_verified_guidance(topic: str) -> int:
+    """Return the number of verified guidance entries for *topic*.
+    Used by the confidence formula — only verified entries earn full trust.
+    """
+    entries = load_guidance(topic)
+    return sum(1 for e in entries if e.get("verified"))
+
+
+def mark_guidance_verified(topic: str, ticket_id: str) -> None:
+    """Mark all guidance entries for *ticket_id* in *topic* as verified.
+    Call this when a ticket resolved using this guidance is confirmed correct.
+    """
+    path = _KNOWLEDGE_DIR / f"{_topic_slug(topic)}.yaml"
+    if not path.exists():
+        return
+    with open(path, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    changed = False
+    for entry in data.get("entries", []):
+        if entry.get("ticket_id") == ticket_id and not entry.get("verified"):
+            entry["verified"] = True
+            changed = True
+    if changed:
+        data["last_updated"] = datetime.now(timezone.utc).isoformat()
+        with open(path, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
+        print(f"[learning_store] Marked guidance verified: topic='{topic}' ticket={ticket_id}")
 
 
 # ── Public write API ───────────────────────────────────────────────────────────
