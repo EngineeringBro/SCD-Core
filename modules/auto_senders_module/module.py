@@ -4,16 +4,18 @@ from core.pattern_store import get_email_pattern, get_bot_emails
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 
 
-class BotFilterModule(Module):
+class AutoSendersModule(Module):
     """
-    Routes tickets from data-confirmed bot senders.
+    Routes tickets from data-confirmed automated system senders.
 
-    Which emails qualify is determined entirely by mine_patterns.py:
-    any email where is_bot=True AND confidence >= 0.85 in the historical
-    data.  No hardcoded email list — re-run mine_patterns.py to update.
+    These are legitimate no-reply / platform notification addresses
+    (e.g. Assurant claims system), NOT malicious bots.  Which emails
+    qualify is determined entirely by mine_patterns.py: any email where
+    is_bot=True AND confidence >= 0.85.  No hardcoded list — re-run
+    mine_patterns.py to update as new senders accumulate history.
     """
 
-    name = "bot_filter"
+    name = "auto_senders"
     version = "1.1.0"
 
     def matches(self, ticket: dict) -> bool:

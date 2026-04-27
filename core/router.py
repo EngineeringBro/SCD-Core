@@ -64,11 +64,11 @@ def route(ticket: dict, registry: list[dict], module_map: dict[str, Module]) -> 
         if topic_id and topic_id in [str(t) for t in rule.get("topic_field_ids", [])]:
             return module_map.get(module_name)
 
-        # bot_filter: email list comes from mined patterns, not registry
-        if module_name == "bot_filter":
+        # auto_senders: email list comes from mined patterns, not registry
+        if module_name == "auto_senders":
             if reporter_email and reporter_email in bot_email_set:
                 return module_map.get(module_name)
-            continue  # skip keyword/email checks for bot_filter
+            continue  # skip keyword/email checks for auto_senders
 
         # Reporter email match for other modules (exact address or @domain suffix)
         for pattern in rule.get("reporter_emails", []):
