@@ -41,6 +41,7 @@ def post_proposal(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
     validator_result,
+    brain1_reasoning: str = "",
 ) -> int:
     """
     Post the proposal as a GitHub Issue.
@@ -58,7 +59,7 @@ def post_proposal(
     confidence_prefix = "[LOW CONFIDENCE] " if low_confidence else ""
     title = f"{confidence_prefix}[{verdict}] SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
 
-    body = _build_body(suggestion, gate_summary, validator_result, low_confidence=low_confidence)
+    body = _build_body(suggestion, gate_summary, validator_result, low_confidence=low_confidence, brain1_reasoning=brain1_reasoning)
 
     labels = list(LABELS)
     if low_confidence:
@@ -137,6 +138,7 @@ def _build_body(
     gate_summary: str,
     validator_result,
     low_confidence: bool = False,
+    brain1_reasoning: str = "",
 ) -> str:
     # Brain 3 output
     verdict = getattr(validator_result, 'verdict', 'SKIPPED')
@@ -169,6 +171,32 @@ def _build_body(
     )
 
     brain1_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+
+    # Brain 3 reasoning (from validator_result)
+    brain3_reasoning = getattr(validator_result, 'reasoning', '')
+
+    # Collapsible reasoning blocks
+    brain1_reasoning_block = ""
+    if brain1_reasoning:
+        brain1_reasoning_block = f"""
+<details>
+<summary>🧠 Brain 1 Reasoning (Claude Sonnet 4.6)</summary>
+
+{brain1_reasoning}
+
+</details>
+"""
+
+    brain3_reasoning_block = ""
+    if brain3_reasoning:
+        brain3_reasoning_block = f"""
+<details>
+<summary>🧠 Brain 3 Reasoning (GPT 5.4)</summary>
+
+{brain3_reasoning}
+
+</details>
+"""
 
     brain3_section = (
         f"> ⏭️ Brain 3 was skipped. Review Brain 1 output directly.\n"
@@ -218,12 +246,12 @@ Example guidance:
 
 ### Brain 3 Diagnosis
 {refined_diagnosis}
-
+{brain3_reasoning_block}
 ### Brain 3 Action Review
 {actions_md}
 ### Brain 3 Notes to Reviewer
 {brain3_section}
-
+{brain1_reasoning_block}
 ### Evidence
 {evidence_md}
 

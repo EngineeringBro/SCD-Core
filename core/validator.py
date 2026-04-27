@@ -26,7 +26,7 @@ except ImportError:
 
 
 VALIDATOR_MODEL = "gpt-5.4"
-MAX_TOKENS = 1024
+MAX_TOKENS = 2048
 
 # GitHub Copilot Business endpoint (confirmed from subscription API).
 COPILOT_BASE_URL = "https://api.business.githubcopilot.com"
@@ -46,6 +46,7 @@ class ValidatorResult:
     action_assessments: list[ActionAssessment]
     overall_notes: str                      # Final note to the human reviewer
     raw_response: str                       # Full model response for traceability
+    reasoning: str = ""                    # step-by-step chain-of-thought from the model
     skipped: bool = False
 
 
@@ -79,7 +80,8 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
                         "You are Brain 3 of SCD Core, an autonomous support-ticket resolution system. "
                         "Brain 1 (Claude) has analyzed a ticket and proposed a resolution. "
                         "Your job is to independently review that proposal and produce your own "
-                        "refined output. This is what the human reviewer will see and act on. "
+                        "refined output. Think step-by-step in the 'reasoning' field before writing "
+                        "your verdict. This is what the human reviewer will see and act on. "
                         "Be precise. Flag anything risky. Output JSON only."
                     ),
                 },
@@ -111,6 +113,7 @@ def review(suggestion: ResolutionSuggestion) -> ValidatorResult:
             action_assessments=assessments,
             overall_notes=parsed.get("overall_notes", ""),
             raw_response=raw,
+            reasoning=parsed.get("reasoning", ""),
         )
     except (json.JSONDecodeError, KeyError):
         return ValidatorResult(
@@ -159,6 +162,7 @@ Your task: independently assess this proposal and produce your own refined outpu
 
 Respond with JSON in this exact shape:
 {{
+  "reasoning": "Step-by-step thinking. Walk through: is the module correct for this ticket? Is each action safe? Are there missing data points? What's the risk level? 4-10 sentences.",
   "verdict": "APPROVED" | "FLAGGED" | "NEEDS_REVISION",
   "refined_diagnosis": "Your own 1-3 sentence diagnosis. Should be more precise than Brain 1's if possible.",
   "action_assessments": [
@@ -168,6 +172,7 @@ Respond with JSON in this exact shape:
   "overall_notes": "Final note to the human reviewer. What to watch for, what was changed, or why it's safe to approve."
 }}
 
+reasoning: your thinking process — written before the verdict, not a summary of it.
 Verdict meanings:
 - APPROVED: safe to execute as-is
 - FLAGGED: do not execute — something is wrong (state what in overall_notes)

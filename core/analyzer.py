@@ -20,7 +20,7 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 ANALYZER_MODEL = "claude-sonnet-4.6"
-MAX_TOKENS = 600
+MAX_TOKENS = 1500
 COPILOT_BASE_URL = "https://api.business.githubcopilot.com"
 
 
@@ -29,6 +29,7 @@ class AnalysisResult:
     enriched_diagnosis: str
     confidence_adjustment: float   # delta applied to module_confidence (-0.2 to +0.1)
     flags: list[str]               # any concerns the LLM spotted
+    reasoning: str = ""           # step-by-step chain-of-thought from the model
     skipped: bool = False
 
 
@@ -62,9 +63,9 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion, learned_guidance: st
                     "role": "system",
                     "content": (
                         "You are Brain 1 of the SCD Core autonomous support agent. "
-                        "Your job is to analyze a Jira support ticket and a proposed resolution plan, "
-                        "then produce an enriched diagnosis. "
-                        "Be concise and precise. Output JSON only."
+                        "Your job is to analyze a Jira support ticket and a proposed resolution plan. "
+                        "Think step-by-step in the 'reasoning' field before writing your diagnosis. "
+                        "Be precise. Output JSON only."
                     ),
                 },
                 {"role": "user", "content": prompt},
@@ -96,6 +97,7 @@ def analyze(ticket: dict, suggestion: ResolutionSuggestion, learned_guidance: st
             enriched_diagnosis=parsed.get("diagnosis", suggestion.diagnosis),
             confidence_adjustment=float(parsed.get("confidence_adjustment", 0.0)),
             flags=parsed.get("flags", []),
+            reasoning=parsed.get("reasoning", ""),
         )
     except (json.JSONDecodeError, ValueError):
         return AnalysisResult(
@@ -142,11 +144,13 @@ MODULE PROPOSED:
 
 Respond with JSON in this exact shape:
 {{
+  "reasoning": "Step-by-step chain-of-thought. Walk through each signal: topic field, reporter email, org, description, summary, evidence. Explain why the module choice is correct or questionable. 3-8 sentences.",
   "diagnosis": "1-3 sentence enriched diagnosis. Be specific about what is wrong and why the proposed resolution is correct (or not).",
   "confidence_adjustment": 0.0,
   "flags": []
 }}
 
+reasoning: your thinking process — written before the diagnosis, not a summary of it.
 confidence_adjustment: float between -0.2 and +0.1. Use negative if something looks wrong or uncertain.
 flags: list of strings — any concerns, missing information, or risks. Empty list if none.
 """

@@ -171,7 +171,7 @@ def run() -> None:
             _sign_suggestion(suggestion, hmac_key)
 
         # Human reviews Brain 3's output — pass the full result
-        issue_number = post_proposal(suggestion, gate_summary, validator_result)
+        issue_number = post_proposal(suggestion, gate_summary, validator_result, brain1_reasoning=analysis.reasoning)
         print(f"[orchestrator] {ticket_id}: proposal posted as GitHub Issue #{issue_number}")
 
         state_store.mark_processed(current_state, ticket_id, proposal_issue=issue_number)
