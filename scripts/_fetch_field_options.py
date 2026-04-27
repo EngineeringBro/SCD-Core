@@ -17,33 +17,29 @@ TARGET_FIELDS = {
     "customfield_10186": "Support Level",
 }
 
+# JQL to find tickets where each field is set (use cf[...] syntax for custom fields)
+TARGETED_JQL = {
+    "customfield_10036": 'project = SCD AND "Severity Level" is not EMPTY AND resolution is not EMPTY ORDER BY updated DESC',
+    "customfield_10143": 'project = SCD AND "Type of Work" is not EMPTY AND resolution is not EMPTY ORDER BY updated DESC',
+    "customfield_10186": 'project = SCD AND "Support Level" is not EMPTY AND resolution is not EMPTY ORDER BY updated DESC',
+}
+
 j = JiraReadClient()
-
-# Collect all distinct option {id: value} pairs seen across multiple tickets
-seen: dict[str, dict[str, str]] = {fid: {} for fid in TARGET_FIELDS}
-
-# Fetch up to 50 recently closed SCD tickets — enough to see all option variants
-issues = j.search(
-    jql="project = SCD AND resolution is not EMPTY ORDER BY updated DESC",
-    fields=list(TARGET_FIELDS.keys()),
-    max_results=50,
-)
-
-for issue in issues:
-    f = issue.get("fields", {})
-    for fid in TARGET_FIELDS:
-        raw = f.get(fid)
-        if isinstance(raw, dict) and "id" in raw and "value" in raw:
-            seen[fid][raw["id"]] = raw["value"]
 
 print("Option IDs found from live tickets:\n")
 for fid, fname in TARGET_FIELDS.items():
+    jql = TARGETED_JQL[fid]
+    issues = j.search(jql=jql, fields=[fid], max_results=50)
+    seen: dict[str, str] = {}
+    for issue in issues:
+        raw = issue.get("fields", {}).get(fid)
+        if isinstance(raw, dict) and "id" in raw and "value" in raw:
+            seen[raw["id"]] = raw["value"]
     print(f"{fname} ({fid}):")
-    opts = seen[fid]
-    if opts:
-        for oid, oval in sorted(opts.items(), key=lambda x: int(x[0])):
+    if seen:
+        for oid, oval in sorted(seen.items(), key=lambda x: int(x[0])):
             print(f"  {oid}: {oval}")
     else:
-        print("  (no tickets with this field set in last 50)")
+        print("  (no tickets with this field set)")
     print()
 
