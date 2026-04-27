@@ -74,11 +74,11 @@ def classify(ticket: dict) -> str:
         parsed = json.loads(stripped)
         module_name = parsed.get("module", "general")
         if module_name not in KNOWN_MODULES:
-            print(f"[brain0] Unknown module '{module_name}' — falling back to general")
+            print(f"[router] Unknown module '{module_name}' — falling back to general")
             return "general"
         return module_name
     except (ValueError, KeyError, json.JSONDecodeError, OSError) as exc:
-        print(f"[brain0] LLM call failed ({type(exc).__name__}: {exc}) — using deterministic fallback")
+        print(f"[router] LLM call failed ({type(exc).__name__}: {exc}) — using deterministic fallback")
         return _deterministic_fallback(ticket)
 
 

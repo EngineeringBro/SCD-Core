@@ -117,13 +117,13 @@ def run() -> None:
             module = module_map[forced_module_name]
             print(f"[orchestrator] {ticket_id}: human override — force-routed to '{module.name}'")
         else:
-            # Brain 0 — classify ticket into a module name
+            # Step 2: Router — classify ticket into a module name
             module_name = brain0_classify(ticket)
             module = module_map.get(module_name)
             if module is None:
-                print(f"[orchestrator] {ticket_id}: Brain0 returned '{module_name}' but module not loaded — skipping")
+                print(f"[orchestrator] {ticket_id}: Router returned '{module_name}' but module not loaded — skipping")
                 continue
-            print(f"[orchestrator] {ticket_id}: Brain0 routed to '{module.name}'")
+            print(f"[orchestrator] {ticket_id}: Router → '{module.name}'")
 
         # If this module requires local Playwright session, post trigger issue and stop
         if module.needs_local_run:
@@ -139,7 +139,7 @@ def run() -> None:
             print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
             continue
 
-        # Stamp topic on every suggestion regardless of module, so github_issues.py
+        # Stamp topic on every suggestion regardless of module, so resolver.py
         # and the learning store can surface/save it correctly.
         ticket_topic = (ticket.get("fields", {}).get("customfield_10170") or {}).get("value", "Unknown")
         suggestion.sub_agent_attribution.setdefault("topic", ticket_topic)
@@ -147,19 +147,19 @@ def run() -> None:
         # Load any human-verified guidance for this topic (applies to ALL modules)
         learned_guidance = get_guidance_text(ticket_topic)
         if learned_guidance:
-            print(f"[orchestrator] {ticket_id}: human guidance found for topic '{ticket_topic}' — injecting into Brain 1")
+            print(f"[orchestrator] {ticket_id}: guidance found for topic '{ticket_topic}' — injecting into Analyzer")
 
-        # Brain 1 — Claude Sonnet 4.6 enriches the diagnosis
+        # Step 3b: Analyzer — enriches Module output before Gatekeeper sees it
         analysis = brain1_analyze(ticket, suggestion, learned_guidance=learned_guidance)
         suggestion.diagnosis = analysis.enriched_diagnosis
         suggestion.module_confidence = round(
             min(1.0, max(0.0, suggestion.module_confidence + analysis.confidence_adjustment)), 2
         )
         if analysis.flags:
-            print(f"[orchestrator] {ticket_id}: Brain1 flags — {analysis.flags}")
-        print(f"[orchestrator] {ticket_id}: Brain1 analysis {'applied' if not analysis.skipped else 'skipped'}")
+            print(f"[orchestrator] {ticket_id}: Analyzer flags — {analysis.flags}")
+        print(f"[orchestrator] {ticket_id}: Analyzer {'applied' if not analysis.skipped else 'skipped'}")
 
-        # Brain 2 — Gatekeeper (passes source ticket_id to guard against prompt injection)
+        # Step 4: Gatekeeper — hardcoded safety rules, no LLM
         gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
         print(f"[orchestrator] {ticket_id}: gatekeeper => {gate_result.verdict}")
 

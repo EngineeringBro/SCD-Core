@@ -1,11 +1,9 @@
 """
-Router — reads module_registry.yaml and matches a ticket to the correct module.
-Ordered match: first matching rule wins. Falls through to General if no match.
+Registry — loads and exposes all Module subclasses from the modules/ directory.
+Used by the orchestrator (and localbrain.py) to discover which modules are available.
 
-Email-based routing for the bot_filter module is driven dynamically from
-core.pattern_store (mined from 50K+ historical tickets) rather than a
-hardcoded list.  Only emails where is_bot=True AND confidence >= 0.85 in
-the mined data are routed to bot_filter.
+Separate from routing logic: the Router (router.py / Brain 0) decides WHICH module
+to use; this file just makes them all importable by name.
 """
 from __future__ import annotations
 import importlib

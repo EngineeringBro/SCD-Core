@@ -1,12 +1,12 @@
 """
-Analyzer — Brain 1 LLM layer. Uses Claude Sonnet 4.6 to analyze a ticket
-and produce a structured diagnosis before the module applies its action plan.
+Analyzer — Enrichment layer between step 3 (Module) and step 4 (Gatekeeper).
 
-The module (pure Python) handles routing and action selection.
-The analyzer enriches the diagnosis with LLM reasoning.
+Runs Claude Sonnet 4.6 to enrich the Module's diagnosis and adjust its confidence
+score. This is NOT the same as the orphaned_transaction module's internal Brain 1
+(which uses Playwright to extract transaction data). This analyzer is a lightweight
+post-processing pass applied to every module's ResolutionSuggestion.
 
-Called by the orchestrator after module.run() — the analyzer's output
-is merged into the ResolutionSuggestion before it reaches the Gatekeeper.
+Called by orchestrator after module.run(), before gatekeeper.check().
 """
 from __future__ import annotations
 import json
