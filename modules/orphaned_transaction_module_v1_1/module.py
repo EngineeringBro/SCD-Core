@@ -43,6 +43,44 @@ CLIENT_TABLE = {
     "idropped": "https://idropped.repairq.io",
 }
 
+# Maps reporter email domains to RepairQ subdomains
+REPORTER_EMAIL_DOMAIN_MAP: dict[str, str] = {
+    "mobileklinik.ca": "mobileklinik",
+    "telus.com": "mobileklinik",
+    "cpr-corporate.com": "cpr",
+    "ismash.com": "ismash",
+    "batteriesplus.com": "batteriesplus",
+    "silkroadtelecom.com": "silkroadtelecom",
+    "fruitfixed.com": "fruitfixed",
+    "compupod.com": "compupod",
+    "mobilesnap.ca": "mobilesnap",
+    "idropped.com": "idropped",
+    "experimax.com": "experimax",
+    "sosi.com": "sosi",
+    "assurant.com": "sosi",
+}
+
+# Maps organization name fragments (lowercase) to RepairQ subdomains
+ORG_NAME_MAP: dict[str, str] = {
+    "mobile klinik": "mobileklinik",
+    "mobileklinik": "mobileklinik",
+    "telus": "mobileklinik",
+    "cpr cell phone repair": "cpr",
+    "cpr canada": "cpr-canada",
+    "ismash": "ismash",
+    "batteries plus": "batteriesplus",
+    "batteriesplus": "batteriesplus",
+    "silk road": "silkroadtelecom",
+    "fruit fixed": "fruitfixed",
+    "compupod": "compupod",
+    "mobilesnap": "mobilesnap",
+    "samsung service": "samsungsvc",
+    "idropped": "idropped",
+    "experimax": "experimax",
+    "sosi": "sosi",
+    "assurant": "sosi",
+}
+
 SQL_TEMPLATE = (
     "insert into `transaction` values ("
     "null, '{rq_ticket}', 'Customer', '{customer_id}', '{location_id}', "
@@ -85,7 +123,7 @@ class OrphanedTransactionModule(Module):
 
         rq_ticket = _extract_rq_ticket(subject, fields)
         client_url = _extract_client_url(fields)
-        client_name = _identify_client(client_url)
+        client_name, client_source = _resolve_client(fields, client_url)
         known_client = client_name in CLIENT_TABLE
 
         diagnosis = (
@@ -97,7 +135,7 @@ class OrphanedTransactionModule(Module):
 
         internal_comment = (
             f"SCD Core identified this as an orphaned transaction.\n\n"
-            f"**Client**: {client_name} ({client_url or 'URL not found'})\n"
+            f"**Client**: {client_name} ({client_url or 'URL not found'}) _(identified via {client_source})_\n"
             f"**RQ Ticket**: {rq_ticket or 'extract from ticket body'}\n\n"
             f"**Resolution steps** (v1.1 workflow):\n"
             f"1. Run Browser Call 1 to extract customer_id, location, VCT list\n"
@@ -118,6 +156,7 @@ class OrphanedTransactionModule(Module):
                 {"source": "topic_field", "value": "10446 (Transaction Errors)"},
                 {"source": "subject", "value": subject},
                 {"source": "client_identified", "value": client_name},
+                {"source": "client_source", "value": client_source},
                 {"source": "rq_ticket_extracted", "value": rq_ticket or "not found"},
                 {"source": "known_client", "value": str(known_client)},
             ],
@@ -184,14 +223,33 @@ def _extract_client_url(fields: dict) -> str | None:
     return None
 
 
-def _identify_client(url: str | None) -> str:
-    if not url:
-        return "unknown"
-    match = re.search(r"https?://([a-z0-9\-]+)\.repairq\.io", url)
-    if match:
-        subdomain = match.group(1)
-        return subdomain if subdomain in CLIENT_TABLE else f"{subdomain} (unknown)"
-    return "unknown"
+def _resolve_client(fields: dict, url: str | None) -> tuple[str, str]:
+    """Returns (subdomain_or_unknown, source_label). Tries URL → email → org."""
+    # 1. URL in description/comments (most reliable)
+    if url:
+        m = re.search(r"https?://([a-z0-9\-]+)\.repairq\.io", url)
+        if m:
+            subdomain = m.group(1)
+            name = subdomain if subdomain in CLIENT_TABLE else f"{subdomain} (unknown)"
+            return name, "url"
+
+    # 2. Reporter email domain
+    reporter = fields.get("reporter") or {}
+    email = reporter.get("emailAddress", "")
+    if email and "@" in email:
+        domain = email.split("@", 1)[1].lower()
+        if domain in REPORTER_EMAIL_DOMAIN_MAP:
+            return REPORTER_EMAIL_DOMAIN_MAP[domain], "reporter_email"
+
+    # 3. Organization field (customfield_10002)
+    orgs = fields.get("customfield_10002") or []
+    for org in orgs:
+        org_name = (org.get("name") or "").lower()
+        for key, subdomain in ORG_NAME_MAP.items():
+            if key in org_name:
+                return subdomain, "org_field"
+
+    return "unknown", "none"
 
 
 def _adf_to_text(adf: dict) -> str:
