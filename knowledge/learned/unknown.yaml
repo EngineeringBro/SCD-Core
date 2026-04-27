@@ -22,4 +22,12 @@ entries:
   provided_by: EngineeringBro
   provided_at: '2026-04-27T15:07:33.778155+00:00'
   issue_number: 10
-last_updated: '2026-04-27T15:07:33.778169+00:00'
+- ticket_id: SCD-141952
+  guidance: 'module: orphaned transaction'
+  provided_by: EngineeringBro
+  provided_at: '2026-04-27T16:32:21.724679+00:00'
+  issue_number: 13
+  module_override: orphaned_transaction
+last_updated: '2026-04-27T16:32:21.724690+00:00'
+ticket_overrides:
+  SCD-141952: orphaned_transaction
