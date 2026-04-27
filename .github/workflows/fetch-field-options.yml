@@ -1,0 +1,26 @@
+name: Fetch Jira Field Option IDs (one-off)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch-options:
+    name: Print Jira field option IDs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Fetch field options
+        env:
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+        run: python scripts/_fetch_field_options.py
