@@ -44,11 +44,23 @@ def route(ticket: dict, registry: list[dict], module_map: dict[str, Module]) -> 
     description = _extract_plain_text(
         ticket.get("fields", {}).get("description") or {}
     ).lower()
+    reporter_email = (
+        (ticket.get("fields", {}).get("reporter") or {}).get("emailAddress", "") or ""
+    ).lower().strip()
 
     for rule in registry:
         # Deterministic topic field match
         if topic_id and topic_id in [str(t) for t in rule.get("topic_field_ids", [])]:
             return module_map.get(rule["module"])
+
+        # Reporter email match (exact address or @domain suffix)
+        for pattern in rule.get("reporter_emails", []):
+            p = pattern.lower().strip()
+            if p.startswith("@"):
+                if reporter_email.endswith(p):
+                    return module_map.get(rule["module"])
+            elif reporter_email == p:
+                return module_map.get(rule["module"])
 
         # Keyword match on subject or description
         for kw in rule.get("keywords", []):

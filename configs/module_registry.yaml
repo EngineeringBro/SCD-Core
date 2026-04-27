@@ -6,6 +6,22 @@ modules:
     topic_field_ids: [10438]
     keywords: []
 
+  - module: bot_filter
+    description: >
+      Automated bot tickets from known no-reply senders (noreply@repairq.io,
+      notify@ringcentral.com, azure-noreply@microsoft.com, etc.).
+      Catches tickets that lack a topic_field match but are clearly machine-generated.
+      Positioned after topic-specific modules so properly-tagged bot tickets
+      (Revv, RingCentral, auto_notifications) still go to their specialist modules.
+    topic_field_ids: []
+    reporter_emails:
+      - noreply@repairq.io
+      - notify@ringcentral.com
+      - azure-noreply@microsoft.com
+      - help@mandrill.com
+      - service@paypal.com
+    keywords: []
+
   - module: revv_errors
     description: Automated Revv sync error reports
     topic_field_ids: [10494]
