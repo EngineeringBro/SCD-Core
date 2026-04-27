@@ -1,3 +1,3 @@
-from modules.auto_notifications_module.module import AutoNotificationsModule
+from modules.auto_notification_module_v1_0.module import AutoNotificationModule
 
-__all__ = ["AutoNotificationsModule"]
+__all__ = ["AutoNotificationModule"]
