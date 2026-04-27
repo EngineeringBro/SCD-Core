@@ -10,8 +10,8 @@ import json
 import os
 from pathlib import Path
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
-from modules.general_module.core_cx_retriever import Candidate
-from modules.general_module.core_cx_reranker import ScoredCandidate
+from modules.general_module_v0_2.core_cx_retriever import Candidate
+from modules.general_module_v0_2.core_cx_reranker import ScoredCandidate
 
 try:
     from openai import OpenAI
