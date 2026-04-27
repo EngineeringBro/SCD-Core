@@ -52,8 +52,8 @@ SQL_TEMPLATE = (
 )
 
 
-class OrphanedTransactionsModule(Module):
-    name = "orphaned_transactions"
+class OrphanedTransactionModule(Module):
+    name = "orphaned_transaction"
     version = "1.1"  # conf=0.93 >= 90% -> v1.x; .1 = second edition
 
     def __init__(self):

@@ -24,7 +24,7 @@ from core.learning_store import save_guidance
 
 # Canonical module names the agent knows about.
 _KNOWN_MODULES = {
-    "orphaned_transactions", "orphaned_transaction",
+    "orphaned_transaction",
     "auto_notification", "auto_notifications",
     "spam",
     "general",
@@ -50,7 +50,7 @@ def _parse_module_override(comment: str) -> str | None:
     for known in _KNOWN_MODULES:
         if candidate in known or known.startswith(candidate):
             # Return the canonical base name (no version suffix)
-            return known.replace("orphaned_transaction", "orphaned_transactions")
+            return known
     return None
 
 

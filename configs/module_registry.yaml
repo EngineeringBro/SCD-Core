@@ -20,7 +20,7 @@ modules:
 
   # --- RESOLUTION MODULES ---
 
-  - module: orphaned_transactions
+  - module: orphaned_transaction
     description: Orphaned / stuck payment transactions
     topic_field_ids: [10446]
     keywords: ["orphaned transaction", "orphan transaction", "stuck transaction",
