@@ -18,7 +18,7 @@ class SpamModule(Module):
     """
 
     name = "spam"
-    version = "1.1.0"
+    version = "0.1"  # conf=0.50 (dynamic, mined) < 90% -> v0.x; .1 = first edition
 
     def matches(self, ticket: dict) -> bool:
         topic_id = str(

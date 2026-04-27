@@ -54,7 +54,7 @@ SQL_TEMPLATE = (
 
 class OrphanedTransactionsModule(Module):
     name = "orphaned_transactions"
-    version = "1.1.0"
+    version = "1.1"  # conf=0.93 >= 90% -> v1.x; .1 = second edition
 
     def __init__(self):
         manifest_path = LEARNED_DIR / "manifest.yaml"
