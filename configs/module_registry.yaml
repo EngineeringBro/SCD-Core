@@ -6,7 +6,7 @@ modules:
     topic_field_ids: [10438]
     keywords: []
 
-  - module: auto_notifications
+  - module: auto_notification
     description: >
       All automated notification profiles: Revv sync errors (topic 10494),
       Automatic Notifications (topic 10404), and Assurant email senders
