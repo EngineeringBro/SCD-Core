@@ -72,10 +72,14 @@ def save_guidance(
     guidance: str,
     provided_by: str,
     issue_number: int,
+    module_override: str | None = None,
 ) -> None:
     """
     Append a new guidance entry for *topic*.
     Creates ``knowledge/learned/<slug>.yaml`` if it doesn't exist.
+
+    If *module_override* is provided, it is stored per-ticket so the orchestrator
+    can force-route future runs of that ticket to the specified module.
     """
     slug = _topic_slug(topic)
     _KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,18 +91,42 @@ def save_guidance(
     else:
         data = {"topic": topic, "topic_slug": slug, "entries": []}
 
-    data.setdefault("entries", []).append(
-        {
-            "ticket_id": ticket_id,
-            "guidance": guidance.strip(),
-            "provided_by": provided_by,
-            "provided_at": datetime.now(timezone.utc).isoformat(),
-            "issue_number": issue_number,
-        }
-    )
+    entry: dict[str, Any] = {
+        "ticket_id": ticket_id,
+        "guidance": guidance.strip(),
+        "provided_by": provided_by,
+        "provided_at": datetime.now(timezone.utc).isoformat(),
+        "issue_number": issue_number,
+    }
+    if module_override:
+        entry["module_override"] = module_override
+
+    data.setdefault("entries", []).append(entry)
     data["last_updated"] = datetime.now(timezone.utc).isoformat()
+
+    # Keep a ticket-level override index for fast lookup by orchestrator
+    overrides = data.setdefault("ticket_overrides", {})
+    if module_override:
+        overrides[ticket_id] = module_override
+        print(f"[learning_store] module_override set: {ticket_id} -> '{module_override}'")
 
     with open(path, "w", encoding="utf-8") as fh:
         yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
 
     print(f"[learning_store] Saved guidance for topic='{topic}' (slug={slug})")
+
+
+def get_module_override(topic: str, ticket_id: str) -> str | None:
+    """
+    Return the module name a human has instructed for *ticket_id* within *topic*,
+    or None if no override exists.
+    """
+    path = _KNOWLEDGE_DIR / f"{_topic_slug(topic)}.yaml"
+    if not path.exists():
+        # Also check the 'unknown' slug used when topic is not yet set
+        path = _KNOWLEDGE_DIR / "unknown.yaml"
+        if not path.exists():
+            return None
+    with open(path, encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    return data.get("ticket_overrides", {}).get(ticket_id)

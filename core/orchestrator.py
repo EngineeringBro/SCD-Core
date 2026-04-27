@@ -30,7 +30,7 @@ from core import gatekeeper, state as state_store
 from core.analyzer import analyze as brain1_analyze
 from core.validator import review as validator_review
 from core.github_issues import post_proposal, is_issue_closed
-from core.learning_store import get_guidance_text
+from core.learning_store import get_guidance_text, get_module_override
 
 # JQL to find open SCD tickets
 JQL_BASE = (
@@ -109,12 +109,18 @@ def run() -> None:
                 skipped_state += 1
                 continue
 
-        module = route(ticket, registry, module_map)
-        if module is None:
-            print(f"[orchestrator] {ticket_id}: no module matched — skipping")
-            continue
-
-        print(f"[orchestrator] {ticket_id}: routed to '{module.name}'")
+        # Check if a human has instructed a specific module for this ticket
+        ticket_topic = (ticket.get("fields", {}).get("customfield_10170") or {}).get("value", "Unknown")
+        forced_module_name = get_module_override(ticket_topic, ticket_id)
+        if forced_module_name and forced_module_name in module_map:
+            module = module_map[forced_module_name]
+            print(f"[orchestrator] {ticket_id}: human override — force-routed to '{module.name}'")
+        else:
+            module = route(ticket, registry, module_map)
+            if module is None:
+                print(f"[orchestrator] {ticket_id}: no module matched — skipping")
+                continue
+            print(f"[orchestrator] {ticket_id}: routed to '{module.name}'")
 
         try:
             suggestion = module.run(ticket, jira)
