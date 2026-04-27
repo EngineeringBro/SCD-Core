@@ -184,7 +184,7 @@ class OrphanedTransactionModule(Module):
                 Action(
                     step=3,
                     type="jira_field_update",
-                    payload={"field": "customfield_10201", "value_id": "10500"},  # Software Bug
+                    payload={"field": "customfield_10201", "value_id": "10499"},  # Integration or Sync Error
                 ),
                 # Steps 4-6 (SQL execution, public comment, resolve) are
                 # performed AFTER the human runs the browser workflow and

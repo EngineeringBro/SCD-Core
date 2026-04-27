@@ -141,7 +141,7 @@ def _build_prompt(suggestion: ResolutionSuggestion) -> str:
     data.pop("hmac_signature", None)
 
     actions_summary = "\n".join(
-        f"  Step {a.step}: {a.type} — {json.dumps(a.payload, ensure_ascii=False)[:200]}"
+        f"  Step {a.step}: {a.type} — {json.dumps(a.payload, ensure_ascii=False)[:1500]}"
         for a in suggestion.actions
     )
 
