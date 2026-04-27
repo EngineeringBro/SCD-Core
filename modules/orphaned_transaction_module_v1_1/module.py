@@ -135,7 +135,7 @@ class OrphanedTransactionModule(Module):
 
         internal_comment = (
             f"SCD Core identified this as an orphaned transaction.\n\n"
-            f"**Client**: {client_name} ({client_url or 'URL not found'}) _(identified via {client_source})_\n"
+            f"**Client**: {client_name} _(identified via {client_source}{(', ' + client_url) if client_url else ''})_\n"
             f"**RQ Ticket**: {rq_ticket or 'extract from ticket body'}\n\n"
             f"**Resolution steps** (v1.1 workflow):\n"
             f"1. Run Browser Call 1 to extract customer_id, location, VCT list\n"

@@ -158,11 +158,65 @@ PROPOSED ACTIONS:
 EVIDENCE:
 {json.dumps(suggestion.evidence, ensure_ascii=False)}
 
+--- JIRA FIELD REFERENCE (authoritative — do NOT flag these as unknown) ---
+customfield_10170 (Topic):
+  10446 = Transaction Errors
+  10438 = Spam
+  10361 = Claims
+  10354 = Billing
+  10414 = Printing
+  10439 = Square Integration
+  10390 = Heartland
+  10352 = Asurion
+  10351 = Assurant
+  10404 = Automatic Notifications
+  10495 = Azure Notification
+  10413 = Pricing Increase
+  10427 = RMAs
+  10434 = Settings & Configuration Questions
+  10494 = Revv Error Report
+  10496 = Ring Central Alert
+  10405 = Onboarding
+  10435 = Signup Issues
+  10380 = Google
+  10369 = Error - 500
+  10366 = Error - 400
+  10368 = Error - 403
+  10393 = Inventory
+  10424 = Reports
+  10443 = Ticket/Device Update
+  10469 = Re-Open Ticket
+
+customfield_10201 (Root Cause):
+  10497 = User Behavior or Input Error
+  10498 = Config or Workflow Discrepancy
+  10499 = Integration or Sync Error
+  10500 = Software Bug
+  10501 = Unknown
+  10764 = Infrastructure
+
+customfield_10158 (Product):
+  10336 = RepairQ OTS
+  10340 = RepairQ Enterprise
+  10334 = ServiceManager
+  10335 = ServiceNetwork
+
+Resolution options: Fixed/Completed, Dismissed, Duplicate, Declined/Canceled,
+Done, Known Error, Moved to CS, Not Fixable, Software failure, Won't Do,
+Works as Designed, Cannot Reproduce
+--- END FIELD REFERENCE ---
+
+IMPORTANT: Your role is to catch REAL threats — wrong module choice, dangerous SQL,
+actions that could corrupt live data, or missing critical identifiers. Do NOT flag
+actions simply because you are unfamiliar with a field value — use the reference above.
+Do NOT flag "URL not found" parentheticals in comment bodies as a risk — client
+identification via reporter email or org field is a valid, trusted fallback.
+
 Your task: independently assess this proposal and produce your own refined output.
 
 Respond with JSON in this exact shape:
 {{
-  "reasoning": "Step-by-step thinking. Walk through: is the module correct for this ticket? Is each action safe? Are there missing data points? What's the risk level? 4-10 sentences.",
+  "reasoning": "Step-by-step thinking. Walk through: is the module correct for this ticket? Is each action safe? Are there real risks (wrong module, dangerous data change, missing critical identifiers)? 4-10 sentences.",
   "verdict": "APPROVED" | "FLAGGED" | "NEEDS_REVISION",
   "refined_diagnosis": "Your own 1-3 sentence diagnosis. Should be more precise than Brain 1's if possible.",
   "action_assessments": [
@@ -175,7 +229,7 @@ Respond with JSON in this exact shape:
 reasoning: your thinking process — written before the verdict, not a summary of it.
 Verdict meanings:
 - APPROVED: safe to execute as-is
-- FLAGGED: do not execute — something is wrong (state what in overall_notes)
-- NEEDS_REVISION: mostly correct but one or more actions need human adjustment before executing
+- FLAGGED: do not execute — something is clearly wrong (wrong module, dangerous action)
+- NEEDS_REVISION: a specific action has a genuine risk that needs human adjustment
 """
 
