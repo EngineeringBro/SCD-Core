@@ -27,11 +27,11 @@ import json
 import os
 from dataclasses import asdict
 from core.jira_clients import JiraReadClient
-from core.router import discover_modules
+from core.registry import discover_modules
 from core import gatekeeper, state as state_store
-from core.brain0 import classify as brain0_classify
+from core.router import classify as brain0_classify
 from core.analyzer import analyze as brain1_analyze
-from core.github_issues import post_proposal, post_module_needed, is_issue_closed
+from core.resolver import post_proposal, post_module_needed, is_issue_closed
 from core.learning_store import get_guidance_text, get_module_override
 
 # JQL to find open SCD tickets

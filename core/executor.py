@@ -21,7 +21,7 @@ from dataclasses import asdict
 from core.jira_clients import JiraReadClient, JiraWriteClient
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from core.notification_logs import append_row
-from core.github_issues import close_proposal
+from core.resolver import close_proposal
 import core.state as state_store
 
 # Field option lookups for field updates
@@ -252,7 +252,7 @@ def _text_to_adf(text: str) -> dict:
 if __name__ == "__main__":
     import argparse
     from dataclasses import fields as _dc_fields
-    from core.github_issues import fetch_proposal_json
+    from core.resolver import fetch_proposal_json
 
     parser = argparse.ArgumentParser(description="SCD Core Executor")
     parser.add_argument("--mode", choices=["execute"], default="execute")
