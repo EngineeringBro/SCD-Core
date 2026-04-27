@@ -22,7 +22,7 @@ import os
 
 class GeneralModule(Module):
     name = "general"
-    version = "2.0.0"
+    version = "0.2"  # no fixed confidence (fallback module); v0.x = still in development, .2 = second edition
 
     def matches(self, ticket: dict) -> bool:
         # General is always the fallback — router assigns it explicitly
