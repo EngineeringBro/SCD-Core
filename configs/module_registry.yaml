@@ -2,24 +2,17 @@ modules:
   # --- NOTIFICATION MODULES (deterministic, profile-based) ---
 
   - module: spam
-    description: Spam and junk tickets
+    description: Spam and junk tickets (topic field 10438).
     topic_field_ids: [10438]
     keywords: []
 
   - module: bot_filter
     description: >
-      Automated bot tickets from known no-reply senders (noreply@repairq.io,
-      notify@ringcentral.com, azure-noreply@microsoft.com, etc.).
-      Catches tickets that lack a topic_field match but are clearly machine-generated.
-      Positioned after topic-specific modules so properly-tagged bot tickets
-      (Revv, RingCentral, auto_notifications) still go to their specialist modules.
+      Tickets from data-confirmed automated senders. The qualifying email list
+      is derived dynamically from knowledge/mined_patterns.json (is_bot=True,
+      confidence >= 0.85) — not hardcoded here. Re-run scripts/mine_patterns.py
+      to update as new bot senders accumulate history.
     topic_field_ids: []
-    reporter_emails:
-      - noreply@repairq.io
-      - notify@ringcentral.com
-      - azure-noreply@microsoft.com
-      - help@mandrill.com
-      - service@paypal.com
     keywords: []
 
   - module: revv_errors

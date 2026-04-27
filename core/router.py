@@ -1,14 +1,19 @@
 """
 Router — reads module_registry.yaml and matches a ticket to the correct module.
 Ordered match: first matching rule wins. Falls through to General if no match.
+
+Email-based routing for the bot_filter module is driven dynamically from
+core.pattern_store (mined from 50K+ historical tickets) rather than a
+hardcoded list.  Only emails where is_bot=True AND confidence >= 0.85 in
+the mined data are routed to bot_filter.
 """
 from __future__ import annotations
 import importlib
-import os
 import pkgutil
 import yaml
 from pathlib import Path
 from core.module_base import Module
+from core.pattern_store import get_bot_emails
 
 
 REGISTRY_FILE = Path("configs/module_registry.yaml")
@@ -48,24 +53,36 @@ def route(ticket: dict, registry: list[dict], module_map: dict[str, Module]) -> 
         (ticket.get("fields", {}).get("reporter") or {}).get("emailAddress", "") or ""
     ).lower().strip()
 
+    # Build bot email set once per call (pattern_store uses lru_cache — fast).
+    # Only emails where is_bot=True AND confidence >= 0.85 in historical data.
+    bot_email_set = set(get_bot_emails(min_confidence=0.85))
+
     for rule in registry:
+        module_name = rule.get("module", "")
+
         # Deterministic topic field match
         if topic_id and topic_id in [str(t) for t in rule.get("topic_field_ids", [])]:
-            return module_map.get(rule["module"])
+            return module_map.get(module_name)
 
-        # Reporter email match (exact address or @domain suffix)
+        # bot_filter: email list comes from mined patterns, not registry
+        if module_name == "bot_filter":
+            if reporter_email and reporter_email in bot_email_set:
+                return module_map.get(module_name)
+            continue  # skip keyword/email checks for bot_filter
+
+        # Reporter email match for other modules (exact address or @domain suffix)
         for pattern in rule.get("reporter_emails", []):
             p = pattern.lower().strip()
             if p.startswith("@"):
                 if reporter_email.endswith(p):
-                    return module_map.get(rule["module"])
+                    return module_map.get(module_name)
             elif reporter_email == p:
-                return module_map.get(rule["module"])
+                return module_map.get(module_name)
 
         # Keyword match on subject or description
         for kw in rule.get("keywords", []):
             if kw.lower() in subject or kw.lower() in description:
-                return module_map.get(rule["module"])
+                return module_map.get(module_name)
 
     # Fallback to General module
     return module_map.get("general")

@@ -83,6 +83,22 @@ jobs:
             git push
           fi
 
+      - name: Mine resolution patterns
+        run: |
+          python scripts/mine_patterns.py
+
+      - name: Commit mined patterns
+        run: |
+          git config user.name  "scd-core-bot"
+          git config user.email "scd-core-bot@users.noreply.github.com"
+          git add knowledge/mined_patterns.json
+          if git diff --cached --quiet; then
+            echo "Patterns unchanged — nothing to commit."
+          else
+            git commit -m "chore: refresh mined_patterns.json [skip ci]"
+            git push
+          fi
+
       - name: Print summary
         run: |
           python -c "
