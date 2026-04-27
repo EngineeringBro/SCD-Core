@@ -16,4 +16,10 @@ entries:
   provided_by: EngineeringBro
   provided_at: '2026-04-26T14:51:57.153710+00:00'
   issue_number: 8
-last_updated: '2026-04-26T14:51:57.153748+00:00'
+- ticket_id: SCD-141952
+  guidance: this is an orphaned transactions ticket, goes to orphaned transactions
+    module.
+  provided_by: EngineeringBro
+  provided_at: '2026-04-27T15:07:33.778155+00:00'
+  issue_number: 10
+last_updated: '2026-04-27T15:07:33.778169+00:00'
