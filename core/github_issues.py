@@ -15,6 +15,8 @@ from dataclasses import asdict
 LABELS = ["scd-proposal", "awaiting-approval"]
 GUIDANCE_LABEL = "scd-guidance-needed"   # added when module_confidence < 0.9
 CAPTURED_LABEL = "scd-guidance-captured"  # applied by the learn workflow after capture
+MODULE_NEEDED_LABEL = "scd-module-needed"  # posted by orchestrator when module needs local run
+MODULE_COMPLETE_LABEL = "scd-module-complete"  # posted by localbrain when module is done
 CONFIDENCE_THRESHOLD = 0.9              # below this → ask human for guidance
 REPO_ENV_VAR = "GITHUB_REPOSITORY"   # set automatically by GitHub Actions (owner/repo)
 GH_TOKEN_VAR = "GH_TOKEN"            # auto-injected Actions token — used only for GitHub Issues API
@@ -40,26 +42,20 @@ def _repo() -> str:
 def post_proposal(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
-    validator_result,
-    brain1_reasoning: str = "",
 ) -> int:
     """
-    Post the proposal as a GitHub Issue.
-    The body is built around Brain 3 (GPT 5.4)'s refined output — that is
-    what the human reviews and approves. Brain 1 output is shown as reference.
+    Post the action plan as a GitHub Issue for human review.
+    Issue body shows SQL to run first, then Jira steps execute will apply.
     Returns the created issue number.
     """
     repo = _repo()
     url = f"https://api.github.com/repos/{repo}/issues"
 
-    verdict = getattr(validator_result, 'verdict', 'SKIPPED')
     low_confidence = suggestion.module_confidence < CONFIDENCE_THRESHOLD
-
-    # Surface confidence in title so humans can spot low-confidence proposals at a glance
     confidence_prefix = "[LOW CONFIDENCE] " if low_confidence else ""
-    title = f"{confidence_prefix}[{verdict}] SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
+    title = f"{confidence_prefix}SCD Proposal: {suggestion.ticket_id} — {suggestion.module} v{suggestion.module_version}"
 
-    body = _build_body(suggestion, gate_summary, validator_result, low_confidence=low_confidence, brain1_reasoning=brain1_reasoning)
+    body = _build_body(suggestion, gate_summary, low_confidence=low_confidence)
 
     labels = list(LABELS)
     if low_confidence:
@@ -69,6 +65,43 @@ def post_proposal(
         "title": title,
         "body": body,
         "labels": labels,
+    }
+
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        response = json.loads(r.read())
+    return response["number"]
+
+
+def post_module_needed(ticket_id: str, module_name: str, snapshot: dict) -> int:
+    """
+    Post a trigger issue for modules that require a local run (e.g. orphaned_transaction).
+    localbrain.py watches for this label and fires the module locally.
+    Returns the created issue number.
+    """
+    repo = _repo()
+    url = f"https://api.github.com/repos/{repo}/issues"
+
+    snapshot_json = json.dumps(snapshot, indent=2, ensure_ascii=False)
+    title = f"[MODULE NEEDED] {ticket_id} — {module_name}"
+    body = (
+        f"## Local Module Run Required\n\n"
+        f"| Field | Value |\n"
+        f"|-------|-------|\n"
+        f"| **Ticket** | `{ticket_id}` |\n"
+        f"| **Module** | `{module_name}` |\n\n"
+        f"localbrain.py will pick this up automatically.\n\n"
+        f"<details>\n"
+        f"<summary>Ticket Snapshot (for module input)</summary>\n\n"
+        f"```json\n{snapshot_json}\n```\n"
+        f"</details>\n"
+    )
+
+    payload = {
+        "title": title,
+        "body": body,
+        "labels": [MODULE_NEEDED_LABEL],
     }
 
     data = json.dumps(payload).encode()
@@ -136,138 +169,82 @@ def fetch_proposal_json(issue_number: int) -> dict:
 def _build_body(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
-    validator_result,
     low_confidence: bool = False,
-    brain1_reasoning: str = "",
 ) -> str:
-    # Brain 3 output
-    verdict = getattr(validator_result, 'verdict', 'SKIPPED')
-    refined_diagnosis = getattr(validator_result, 'refined_diagnosis', suggestion.diagnosis)
-    overall_notes = getattr(validator_result, 'overall_notes', '')
-    action_assessments = getattr(validator_result, 'action_assessments', [])
-    skipped = getattr(validator_result, 'skipped', False)
+    """Build the GitHub Issue body for a proposal.
 
-    verdict_emoji = {
-        'APPROVED': '✅',
-        'FLAGGED': '🚫',
-        'NEEDS_REVISION': '⚠️',
-        'SKIPPED': '⏭️',
-    }.get(verdict, '❓')
+    Structure:
+    1. Summary table
+    2. Diagnosis
+    3. SQL section — human runs this first (if any sql actions present)
+    4. Jira steps — what Execute will apply
+    5. Evidence
+    6. Execute instructions
+    7. Collapsible: full JSON for executor
+    """
+    topic_field = (suggestion.sub_agent_attribution or {}).get("topic", "Unknown")
 
-    # Build action table with Brain 3 assessments
-    assessment_map = {a.step: a for a in action_assessments}
-    actions_md = ""
-    for a in suggestion.actions:
-        assessment = assessment_map.get(a.step)
-        status = getattr(assessment, 'status', 'OK') if assessment else '—'
-        note = getattr(assessment, 'note', '') if assessment else ''
-        status_icon = {'OK': '✅', 'RISKY': '⚠️', 'WRONG': '🚫'}.get(status, '—')
-        note_text = f" — {note}" if note else ""
-        actions_md += f"  {a.step}. {status_icon} **{a.type}**{note_text}\n  `{json.dumps(a.payload, ensure_ascii=False)}`\n\n"
+    # Split actions: SQL (human-run) vs Jira (executor-run)
+    sql_actions = [a for a in suggestion.actions if a.type == "sql"]
+    jira_actions = [a for a in suggestion.actions if a.type != "sql"]
 
+    # SQL section
+    if sql_actions:
+        sql_blocks = "\n\n".join(
+            f"```sql\n{a.payload.get('statement', '(no statement)')}\n```"
+            for a in sql_actions
+        )
+        sql_section = (
+            f"## 1️⃣ Run This SQL First\n\n{sql_blocks}\n\n"
+            "> Run against RepairQ DB. Confirm it worked before triggering Execute.\n"
+        )
+    else:
+        sql_section = ""
+
+    # Jira steps section
+    jira_steps_md = "".join(
+        f"- **{a.type}**: `{json.dumps(a.payload, ensure_ascii=False)}`\n"
+        for a in jira_actions
+    )
+    jira_section = f"## 2️⃣ Jira Steps (Execute will apply these)\n\n{jira_steps_md}" if jira_steps_md else ""
+
+    # Evidence
     evidence_md = "\n".join(
         f"  - `{e.get('source', '?')}`: {e.get('value', '')}"
         for e in suggestion.evidence
     )
 
-    brain1_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
-
-    # Brain 3 reasoning (from validator_result)
-    brain3_reasoning = getattr(validator_result, 'reasoning', '')
-
-    # Collapsible reasoning blocks
-    brain1_reasoning_block = ""
-    if brain1_reasoning:
-        brain1_reasoning_block = f"""
-<details>
-<summary>🧠 Brain 1 Reasoning (Claude Sonnet 4.6)</summary>
-
-{brain1_reasoning}
-
-</details>
-"""
-
-    brain3_reasoning_block = ""
-    if brain3_reasoning:
-        brain3_reasoning_block = f"""
-<details>
-<summary>🧠 Brain 3 Reasoning (GPT 5.4)</summary>
-
-{brain3_reasoning}
-
-</details>
-"""
-
-    brain3_section = (
-        f"> ⏭️ Brain 3 was skipped. Review Brain 1 output directly.\n"
-        if skipped else
-        f"{overall_notes}"
-    )
-
-    # Topic for knowledge-store matching (extracted from Jira Topic field)
-    topic_field = (suggestion.sub_agent_attribution or {}).get("topic", "Unknown")
-
+    # Guidance section for low-confidence tickets
     guidance_section = ""
     if low_confidence:
-        guidance_section = f"""
----
-## ⚠️ Guidance Needed — Confidence Below {int(CONFIDENCE_THRESHOLD * 100)}%
+        guidance_section = (
+            f"\n---\n## ⚠️ Guidance Needed — Confidence Below {int(CONFIDENCE_THRESHOLD * 100)}%\n\n"
+            f"| Field | Value |\n|-------|-------|\n"
+            f"| **Confidence** | {suggestion.module_confidence:.0%} |\n"
+            f"| **Topic** | {topic_field} |\n"
+            f"| **Ticket** | {suggestion.ticket_id} |\n\n"
+            "The agent is not confident enough to act autonomously. "
+            "Please reply with the correct resolution approach to train the knowledge store.\n"
+        )
 
-| Field | Value |
-|-------|-------|
-| **Confidence** | {suggestion.module_confidence:.0%} |
-| **Topic** | {topic_field} |
-| **Ticket** | {suggestion.ticket_id} |
+    brain1_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
 
-The agent is **not confident enough** to act on this ticket autonomously.
-
-**Please reply to this issue with the correct resolution approach.**
-Your answer will be saved to the knowledge store and will:
-- Raise confidence for future tickets on this topic
-- Reduce how often you need to provide manual guidance over time
-
-Example guidance:
-> "For tickets like this, the correct action is to post an internal comment explaining X, then transition to Waiting for Customer."
-
-> [!NOTE]
-> After you comment, the **SCD Core — Learn from Guidance** workflow will capture your input automatically and close this guidance request.
-"""
-
-    return f"""## {verdict_emoji} Brain 3 Verdict: {verdict}
-
-> This is Brain 3 (GPT 5.4)'s independent assessment. **This is what you are approving.**
-
-| Field | Value |
-|-------|-------|
-| **Ticket** | {suggestion.ticket_id} |
-| **Module** | `{suggestion.module}` v{suggestion.module_version} |
-| **Brain 1 Confidence** | {suggestion.module_confidence:.0%} |
-| **Gatekeeper** | {gate_summary} |
-
-### Brain 3 Diagnosis
-{refined_diagnosis}
-{brain3_reasoning_block}
-### Brain 3 Action Review
-{actions_md}
-### Brain 3 Notes to Reviewer
-{brain3_section}
-{brain1_reasoning_block}
-### Evidence
-{evidence_md}
-
----
-### ✅ To Approve & Execute
-Trigger **SCD Core — Execute** with:
-- `proposal_issue_number`: this issue number
-- `ticket_id`: `{suggestion.ticket_id}`
-
-Re-validation runs automatically at execution time.
-{guidance_section}
-<details>
-<summary>Brain 1 Raw Output (reference)</summary>
-
-```json
-{brain1_json}
-```
-</details>
-"""
+    return (
+        f"| Field | Value |\n|-------|-------|\n"
+        f"| **Ticket** | {suggestion.ticket_id} |\n"
+        f"| **Module** | `{suggestion.module}` v{suggestion.module_version} |\n"
+        f"| **Confidence** | {suggestion.module_confidence:.0%} |\n"
+        f"| **Gatekeeper** | {gate_summary} |\n\n"
+        f"## Diagnosis\n\n{suggestion.diagnosis}\n\n"
+        f"{sql_section}\n"
+        f"{jira_section}\n\n"
+        f"### Evidence\n{evidence_md}\n\n"
+        f"---\n### ✅ To Execute\n"
+        f"1. Run the SQL above and confirm it worked\n"
+        f"2. Trigger **SCD Core — Execute** with:\n"
+        f"   - `proposal_issue_number`: this issue number\n"
+        f"   - `ticket_id`: `{suggestion.ticket_id}`\n"
+        f"{guidance_section}\n"
+        f"<details>\n<summary>Full JSON (for executor)</summary>\n\n"
+        f"```json\n{brain1_json}\n```\n</details>\n"
+    )

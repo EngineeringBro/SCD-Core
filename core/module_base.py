@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 class Module(ABC):
     name: str = ""
     version: str = "1.0.0"
+    needs_local_run: bool = False   # True = module requires Playwright + local Chrome session
 
     @abstractmethod
     def matches(self, ticket: dict) -> bool:

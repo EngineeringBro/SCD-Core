@@ -1,19 +1,22 @@
 """
-Orchestrator — Brain 1 top-level flow.
+Orchestrator — top-level pipeline.
 
 Run this file directly:
     python -m core.orchestrator
 
 Flow:
   1. Load scan state
-  2. Search Jira for open SCD tickets (delta since last_run)
+  2. Fetch ticket(s) from Jira (Fetcher)
   3. For each unprocessed ticket:
-     a. Route to a module
-     b. module.run() -> ResolutionSuggestion
-     c. Gatekeeper.check() -> GateResult
-     d. If DENY: log and skip
-     e. Validator.review() -> ValidatorResult
-     f. Post proposal as GitHub Issue
+     a. Brain 0 classifies → module name (Router)
+     b. If module.needs_local_run:
+          → post scd-module-needed GitHub Issue with snapshot JSON
+          → mark pending, skip to next ticket
+          → localbrain.py picks it up locally and posts back scd-module-complete
+     c. Otherwise: module.run() → ResolutionSuggestion
+     d. Gatekeeper.check() → GateResult
+     e. If DENY: log and skip
+     f. Post proposal as GitHub Issue (SQL + Jira steps clearly separated)
      g. mark_processed in state
   4. Save state
 """
@@ -22,14 +25,13 @@ import hashlib
 import hmac as _hmac
 import json
 import os
-import sys
 from dataclasses import asdict
 from core.jira_clients import JiraReadClient
-from core.router import load_registry, discover_modules, route
+from core.router import discover_modules
 from core import gatekeeper, state as state_store
+from core.brain0 import classify as brain0_classify
 from core.analyzer import analyze as brain1_analyze
-from core.validator import review as validator_review
-from core.github_issues import post_proposal, is_issue_closed
+from core.github_issues import post_proposal, post_module_needed, is_issue_closed
 from core.learning_store import get_guidance_text, get_module_override
 
 # JQL to find open SCD tickets
@@ -63,7 +65,6 @@ def run() -> None:
 
     jira = JiraReadClient()
     current_state = state_store.load()
-    registry = load_registry()
     module_map = discover_modules()
 
     print(f"[orchestrator] Modules loaded: {list(module_map.keys())}")
@@ -116,15 +117,25 @@ def run() -> None:
             module = module_map[forced_module_name]
             print(f"[orchestrator] {ticket_id}: human override — force-routed to '{module.name}'")
         else:
-            module = route(ticket, registry, module_map)
+            # Brain 0 — classify ticket into a module name
+            module_name = brain0_classify(ticket)
+            module = module_map.get(module_name)
             if module is None:
-                print(f"[orchestrator] {ticket_id}: no module matched — skipping")
+                print(f"[orchestrator] {ticket_id}: Brain0 returned '{module_name}' but module not loaded — skipping")
                 continue
-            print(f"[orchestrator] {ticket_id}: routed to '{module.name}'")
+            print(f"[orchestrator] {ticket_id}: Brain0 routed to '{module.name}'")
+
+        # If this module requires local Playwright session, post trigger issue and stop
+        if module.needs_local_run:
+            snapshot = {"ticket": ticket, "module": module.name}
+            trigger_issue = post_module_needed(ticket_id, module.name, snapshot)
+            print(f"[orchestrator] {ticket_id}: needs_local_run — posted scd-module-needed issue #{trigger_issue}")
+            state_store.mark_processed(current_state, ticket_id, proposal_issue=None)
+            continue
 
         try:
             suggestion = module.run(ticket, jira)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
             continue
 
@@ -161,17 +172,12 @@ def run() -> None:
 
         gate_summary = f"ALLOW ({len(gate_result.checks)} checks passed)"
 
-        # Brain 3 — GPT 5.4 independently reviews and produces refined output
-        validator_result = validator_review(suggestion)
-        print(f"[orchestrator] {ticket_id}: Brain3 => {validator_result.verdict}")
-
         # Sign the proposal with HMAC before posting so executor can verify it
         hmac_key = os.environ.get("PROPOSAL_HMAC_KEY", "")
         if hmac_key:
             _sign_suggestion(suggestion, hmac_key)
 
-        # Human reviews Brain 3's output — pass the full result
-        issue_number = post_proposal(suggestion, gate_summary, validator_result, brain1_reasoning=analysis.reasoning)
+        issue_number = post_proposal(suggestion, gate_summary)
         print(f"[orchestrator] {ticket_id}: proposal posted as GitHub Issue #{issue_number}")
 
         state_store.mark_processed(current_state, ticket_id, proposal_issue=issue_number)
@@ -195,7 +201,7 @@ def run() -> None:
         "tickets_scanned": len(tickets),
     }
     os.makedirs("run-trace", exist_ok=True)
-    with open("run-trace/summary.json", "w") as f:
+    with open("run-trace/summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
 
