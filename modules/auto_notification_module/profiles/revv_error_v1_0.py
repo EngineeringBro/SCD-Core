@@ -18,7 +18,7 @@ Action sequence (no branching):
 """
 from core.resolution_suggestion import Action
 
-VERSION    = "1.0"
+VERSION    = "1.0"  # conf=0.90 >= 90% -> v1.x; .0 = first edition
 CONFIDENCE = 0.90
 DIAGNOSIS  = "Automated Revv sync error notification. No customer impact."
 

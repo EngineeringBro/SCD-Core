@@ -18,7 +18,7 @@ Action sequence (no branching):
 """
 from core.resolution_suggestion import Action
 
-VERSION    = "1.0"
+VERSION    = "0.1"  # conf=0.76 < 90% -> v0.x; .1 = first edition
 CONFIDENCE = 0.76
 DIAGNOSIS  = "Automated system notification. Dismissed per historical pattern (76%)."
 

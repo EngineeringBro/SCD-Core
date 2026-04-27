@@ -21,7 +21,7 @@ Note: Topic field intentionally omitted — Assurant tickets span multiple
 """
 from core.resolution_suggestion import Action
 
-VERSION    = "1.0"
+VERSION    = "1.0"  # conf=0.96 >= 90% -> v1.x; .0 = first edition
 CONFIDENCE = 0.96
 DIAGNOSIS  = "Automated Assurant claims notification. Resolved per historical pattern (96%)."
 
