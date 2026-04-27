@@ -6,25 +6,17 @@ modules:
     topic_field_ids: [10438]
     keywords: []
 
-  - module: auto_senders
-    description: >
-      Tickets from data-confirmed automated system senders (legitimate no-reply
-      and platform notification addresses, NOT malicious bots). The qualifying
-      email list is derived dynamically from knowledge/mined_patterns.json
-      (is_bot=True, confidence >= 0.85) — not hardcoded here. Re-run
-      scripts/mine_patterns.py to update as new senders accumulate history.
-    topic_field_ids: []
-    keywords: []
-
-  - module: revv_errors
-    description: Automated Revv sync error reports
-    topic_field_ids: [10494]
-    keywords: ["revv error", "revv sync"]
-
   - module: auto_notifications
-    description: Automated system notifications (non-Revv)
-    topic_field_ids: [10404, 10496]
-    keywords: ["ringcentral", "ring central", "automatic notification"]
+    description: >
+      All automated notification profiles: Revv sync errors (topic 10494),
+      Automatic Notifications (topic 10404), and Assurant email senders
+      (reporter @assurant.com). RingCentral (topic 10496) is explicitly
+      excluded — those are real customer voicemail/call tickets.
+      Confidence is profile-specific: Revv=0.90, AutoNotif=0.76,
+      Assurant=0.96.
+    topic_field_ids: [10404, 10494]
+    reporter_email_domains: ["@assurant.com"]
+    keywords: []
 
   # --- RESOLUTION MODULES ---
 

@@ -48,17 +48,21 @@ fields:
   customfield_10143:
     name: Type of Work
     type: single_select
-    options: {}  # populate from scan_fields.py output
+    options:
+      10313: Support
 
   customfield_10186:
     name: Support Level
     type: single_select
-    options: {}
+    options:
+      10471: Level 1
+      10472: Level 2
 
   customfield_10036:
     name: Severity Level
     type: single_select
-    options: {}
+    options:
+      10043: Sev 3
 
 transitions:
   resolve: "81"

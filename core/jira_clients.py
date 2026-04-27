@@ -119,3 +119,23 @@ class JiraWriteClient(_JiraBase):
             f"/rest/api/3/issue/{ticket_id}/worklog",
             {"timeSpent": time_spent},
         )
+
+    def find_user_account_id(self, email: str) -> str:
+        """Look up a Jira user's accountId by email address."""
+        params = urllib.parse.urlencode({"query": email, "maxResults": 5})
+        data = self._get(f"/rest/api/3/user/search?{params}")
+        if not data:
+            raise ValueError(f"No Jira user found for email: {email}")
+        # Prefer exact email match
+        for user in data:
+            if (user.get("emailAddress") or "").lower() == email.lower():
+                return user["accountId"]
+        # Fall back to first result
+        return data[0]["accountId"]
+
+    def assign_user(self, ticket_id: str, account_id: str) -> dict:
+        """Assign a ticket to a user by accountId."""
+        return self._put(
+            f"/rest/api/3/issue/{ticket_id}/assignee",
+            {"accountId": account_id},
+        )

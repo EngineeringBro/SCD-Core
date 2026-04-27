@@ -175,6 +175,14 @@ def _execute_action(action: Action, ticket_id: str, jira: JiraWriteClient) -> st
         jira.add_comment(ticket_id, adf_body, internal=internal)
         return f"Posted {'internal' if internal else 'public'} comment ({len(body_text)} chars)"
 
+    elif t == "jira_assign":
+        email = p.get("email", "")
+        if not email:
+            return "jira_assign skipped — no email provided"
+        account_id = jira.find_user_account_id(email)
+        jira.assign_user(ticket_id, account_id)
+        return f"Assigned {ticket_id} to {email} (accountId={account_id[:8]}...)"
+
     elif t == "jira_log_time":
         time_spent = p.get("time_spent", "1m")
         jira.add_worklog(ticket_id, time_spent)

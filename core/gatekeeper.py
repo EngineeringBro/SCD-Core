@@ -18,6 +18,7 @@ SAFE_ACTION_TYPES = frozenset([
     "jira_public_comment",
     "jira_transition",
     "jira_field_update",
+    "jira_assign",
     "jira_log_time",
     "notification_log_append",
 ])

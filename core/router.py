@@ -13,7 +13,6 @@ import pkgutil
 import yaml
 from pathlib import Path
 from core.module_base import Module
-from core.pattern_store import get_bot_emails
 
 
 REGISTRY_FILE = Path("configs/module_registry.yaml")
@@ -53,10 +52,6 @@ def route(ticket: dict, registry: list[dict], module_map: dict[str, Module]) -> 
         (ticket.get("fields", {}).get("reporter") or {}).get("emailAddress", "") or ""
     ).lower().strip()
 
-    # Build bot email set once per call (pattern_store uses lru_cache — fast).
-    # Only emails where is_bot=True AND confidence >= 0.85 in historical data.
-    bot_email_set = set(get_bot_emails(min_confidence=0.85))
-
     for rule in registry:
         module_name = rule.get("module", "")
 
@@ -64,11 +59,10 @@ def route(ticket: dict, registry: list[dict], module_map: dict[str, Module]) -> 
         if topic_id and topic_id in [str(t) for t in rule.get("topic_field_ids", [])]:
             return module_map.get(module_name)
 
-        # auto_senders: email list comes from mined patterns, not registry
-        if module_name == "auto_senders":
-            if reporter_email and reporter_email in bot_email_set:
+        # Reporter email domain match (e.g. "@assurant.com")
+        for domain in rule.get("reporter_email_domains", []):
+            if reporter_email.endswith(domain.lower()):
                 return module_map.get(module_name)
-            continue  # skip keyword/email checks for auto_senders
 
         # Reporter email match for other modules (exact address or @domain suffix)
         for pattern in rule.get("reporter_emails", []):
