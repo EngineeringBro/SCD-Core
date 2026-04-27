@@ -175,6 +175,11 @@ def _execute_action(action: Action, ticket_id: str, jira: JiraWriteClient) -> st
         jira.add_comment(ticket_id, adf_body, internal=internal)
         return f"Posted {'internal' if internal else 'public'} comment ({len(body_text)} chars)"
 
+    elif t == "jira_log_time":
+        time_spent = p.get("time_spent", "1m")
+        jira.add_worklog(ticket_id, time_spent)
+        return f"Logged {time_spent} to {ticket_id}"
+
     elif t == "notification_log_append":
         append_row(action)
         return f"Appended row to log '{p.get('log_file')}'"
