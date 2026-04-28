@@ -232,6 +232,11 @@ class OrphanedTransactionModule(Module):
                 "Brain 1 + Playwright agentic extraction. "
                 f"Transactions found: {len(extraction_result.get('transactions', []))}."
             ),
+            sub_agent_attribution={
+                "topic": "Transaction Errors",
+                "topic_id": "10446",
+                "transactions": extraction_result.get("transactions", []),
+            },
         )
 
     def _run_brain1_loop(

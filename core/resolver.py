@@ -174,77 +174,136 @@ def _build_body(
     """Build the GitHub Issue body for a proposal.
 
     Structure:
-    1. Summary table
-    2. Diagnosis
-    3. SQL section — human runs this first (if any sql actions present)
-    4. Jira steps — what Execute will apply
-    5. Evidence
-    6. Execute instructions
-    7. Collapsible: full JSON for executor
+    1. Summary table (always visible): Ticket, Module, Confidence, Gatekeeper, Topic, HMAC
+    2. Pre-Execution <details>: SQL / manual steps, or "No pre-execution needed"
+    3. Execute <details>: brief steps + nested full-details dropdown
+    4. Low-confidence guidance section (if applicable)
+    5. Raw JSON <details>: hidden, for executor
     """
-    topic_field = (suggestion.sub_agent_attribution or {}).get("topic", "Unknown")
+    attr = suggestion.sub_agent_attribution or {}
+    topic_field = attr.get("topic", "Unknown")
+    confidence_pct = f"{suggestion.module_confidence * 100:.0f}%"
+    hmac_display = (suggestion.hmac_signature[:16] + "…") if suggestion.hmac_signature else "—"
 
-    # Split actions: SQL (human-run) vs Jira (executor-run)
+    # ── 1. Summary table ────────────────────────────────────────────────────
+    summary_table = (
+        f"| Field | Value |\n|-------|-------|\n"
+        f"| **Ticket** | `{suggestion.ticket_id}` |\n"
+        f"| **Module** | `{suggestion.module}` v{suggestion.module_version} |\n"
+        f"| **Confidence** | {confidence_pct} |\n"
+        f"| **Gatekeeper** | {gate_summary} |\n"
+        f"| **Topic** | {topic_field} |\n"
+        f"| **HMAC** | `{hmac_display}` |\n"
+    )
+
+    # ── 2. Pre-Execution section ─────────────────────────────────────────────
     sql_actions = [a for a in suggestion.actions if a.type == "sql"]
-    jira_actions = [a for a in suggestion.actions if a.type != "sql"]
 
-    # SQL section
-    if sql_actions:
+    if suggestion.module == "orphaned_transaction":
+        transactions = attr.get("transactions", [])
+        if transactions:
+            id_rows = "\n".join(
+                f"| {i + 1} | `{tx.get('transaction_id', '—')}` "
+                f"| {tx.get('amount', '—')} "
+                f"| {tx.get('card_brand', '—')} ···{tx.get('last4', '—')} |"
+                for i, tx in enumerate(transactions)
+            )
+            id_table = (
+                f"| # | Transaction ID | Amount | Card |\n"
+                f"|---|----------------|--------|------|\n"
+                f"{id_rows}\n\n"
+            )
+        else:
+            id_table = "_No transactions extracted. Manual review required._\n\n"
+
         sql_blocks = "\n\n".join(
-            f"```sql\n{a.payload.get('statement', '(no statement)')}\n```"
+            f"```sql\n{a.payload.get('statement', '-- empty')}\n```"
+            for a in sql_actions
+        ) if sql_actions else "_No SQL generated._"
+
+        pre_exec_content = (
+            f"{id_table}"
+            f"Copy and paste the SQL below into the RepairQ DB before triggering Execute.\n\n"
+            f"{sql_blocks}"
+        )
+    elif sql_actions:
+        sql_blocks = "\n\n".join(
+            f"```sql\n{a.payload.get('statement', '-- empty')}\n```"
             for a in sql_actions
         )
-        sql_section = (
-            f"## 1️⃣ Run This SQL First\n\n{sql_blocks}\n\n"
-            "> Run against RepairQ DB. Confirm it worked before triggering Execute.\n"
+        pre_exec_content = f"Run the following SQL before triggering Execute:\n\n{sql_blocks}"
+    else:
+        pre_exec_content = "No pre-execution needed."
+
+    pre_exec_section = (
+        f"<details>\n<summary>🔧 Pre-Execution</summary>\n\n"
+        f"{pre_exec_content}\n\n"
+        f"</details>"
+    )
+
+    # ── 3. Execute section ───────────────────────────────────────────────────
+    non_sql_actions = sorted(
+        [a for a in suggestion.actions if a.type != "sql"], key=lambda x: x.step
+    )
+
+    if suggestion.module == "orphaned_transaction":
+        brief_steps = (
+            "If you run **Execute**, the agent will:\n\n"
+            "1. Post a customer reply on the Jira ticket\n"
+            "2. Post an internal comment on the Jira ticket\n"
+            "3. Assign the ticket\n"
+            "4. Resolve the ticket (Fixed / Completed)\n\n"
         )
     else:
-        sql_section = ""
+        step_lines = "".join(
+            f"{i + 1}. `{a.type}`\n" for i, a in enumerate(non_sql_actions)
+        ) or "_No Jira actions._\n"
+        brief_steps = (
+            f"If you run **Execute**, the agent will apply:\n\n{step_lines}\n"
+        )
 
-    # Jira steps section
-    jira_steps_md = "".join(
-        f"- **{a.type}**: `{json.dumps(a.payload, ensure_ascii=False)}`\n"
-        for a in jira_actions
-    )
-    jira_section = f"## 2️⃣ Jira Steps (Execute will apply these)\n\n{jira_steps_md}" if jira_steps_md else ""
-
-    # Evidence
-    evidence_md = "\n".join(
-        f"  - `{e.get('source', '?')}`: {e.get('value', '')}"
-        for e in suggestion.evidence
+    all_action_details = "".join(
+        f"- **Step {a.step}** `{a.type}`: `{json.dumps(a.payload, ensure_ascii=False)}`\n"
+        for a in sorted(suggestion.actions, key=lambda x: x.step)
     )
 
-    # Guidance section for low-confidence tickets
+    execute_content = (
+        f"{brief_steps}"
+        f"Trigger **SCD Core — Execute** with:\n"
+        f"- `proposal_issue_number`: this issue number\n"
+        f"- `ticket_id`: `{suggestion.ticket_id}`\n\n"
+        f"<details>\n<summary>Full execution details</summary>\n\n"
+        f"{all_action_details}\n"
+        f"</details>"
+    )
+
+    execute_section = (
+        f"<details>\n<summary>▶️ Execute</summary>\n\n"
+        f"{execute_content}\n\n"
+        f"</details>"
+    )
+
+    # ── 4. Low-confidence guidance ───────────────────────────────────────────
     guidance_section = ""
     if low_confidence:
         guidance_section = (
             f"\n---\n## ⚠️ Guidance Needed — Confidence Below {int(CONFIDENCE_THRESHOLD * 100)}%\n\n"
-            f"| Field | Value |\n|-------|-------|\n"
-            f"| **Confidence** | {suggestion.module_confidence:.0%} |\n"
-            f"| **Topic** | {topic_field} |\n"
-            f"| **Ticket** | {suggestion.ticket_id} |\n\n"
             "The agent is not confident enough to act autonomously. "
             "Please reply with the correct resolution approach to train the knowledge store.\n"
         )
 
+    # ── 5. Raw JSON (executor payload) ───────────────────────────────────────
     brain1_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+    raw_json_section = (
+        f"<details>\n<summary>Raw JSON (executor payload)</summary>\n\n"
+        f"```json\n{brain1_json}\n```\n"
+        f"</details>"
+    )
 
     return (
-        f"| Field | Value |\n|-------|-------|\n"
-        f"| **Ticket** | {suggestion.ticket_id} |\n"
-        f"| **Module** | `{suggestion.module}` v{suggestion.module_version} |\n"
-        f"| **Confidence** | {suggestion.module_confidence:.0%} |\n"
-        f"| **Gatekeeper** | {gate_summary} |\n\n"
-        f"## Diagnosis\n\n{suggestion.diagnosis}\n\n"
-        f"{sql_section}\n"
-        f"{jira_section}\n\n"
-        f"### Evidence\n{evidence_md}\n\n"
-        f"---\n### ✅ To Execute\n"
-        f"1. Run the SQL above and confirm it worked\n"
-        f"2. Trigger **SCD Core — Execute** with:\n"
-        f"   - `proposal_issue_number`: this issue number\n"
-        f"   - `ticket_id`: `{suggestion.ticket_id}`\n"
+        f"{summary_table}\n"
+        f"{pre_exec_section}\n\n"
+        f"{execute_section}\n"
         f"{guidance_section}\n"
-        f"<details>\n<summary>Full JSON (for executor)</summary>\n\n"
-        f"```json\n{brain1_json}\n```\n</details>\n"
+        f"{raw_json_section}\n"
     )
