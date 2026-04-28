@@ -1,11 +1,11 @@
 """
 localbrain.py — Local Module Runner
 
-Watches the GitHub repo for issues labeled 'scd-module-needed'.
+Watches the GitHub repo for issues labeled 'local-brain-caller'.
 When one appears, extracts the ticket snapshot and runs the appropriate
 module locally (with Playwright access to your live Chrome session).
 Posts the completed action plan back to the same GitHub issue, then
-labels it 'scd-module-complete'.
+labels it 'local-brain-complete'.
 
 Usage:
     python localbrain.py --watch          # watch for new issues (blocking)
@@ -31,8 +31,8 @@ import urllib.request
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-MODULE_NEEDED_LABEL = "scd-module-needed"
-MODULE_COMPLETE_LABEL = "scd-module-complete"
+MODULE_NEEDED_LABEL = "local-brain-caller"
+MODULE_COMPLETE_LABEL = "local-brain-complete"
 GITHUB_API = "https://api.github.com"
 POLL_INTERVAL_DEFAULT = 60   # seconds — overridden by X-Poll-Interval header
 
@@ -180,7 +180,7 @@ def _run_module_for_issue(issue: dict) -> None:
 
     # Pass suggestion through Gatekeeper → same path as any other module
     from core import gatekeeper
-    from core.resolver import post_proposal
+    from core.resolver import give_proposal
 
     gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
     gate_summary = (
@@ -211,9 +211,9 @@ def _run_module_for_issue(issue: dict) -> None:
         canonical = json.dumps(payload_unsigned, sort_keys=True, ensure_ascii=False).encode()
         suggestion.hmac_signature = _hmac.new(hmac_key.encode(), canonical, hashlib.sha256).hexdigest()
 
-    # Post scd-proposal issue (same as orchestrator path)
-    proposal_issue_number = post_proposal(suggestion, gate_summary)
-    print(f"[localbrain] #{issue_number}: posted scd-proposal issue #{proposal_issue_number}")
+    # Post give_proposal issue (same as orchestrator path)
+    proposal_issue_number = give_proposal(suggestion, gate_summary)
+    print(f"[localbrain] #{issue_number}: posted give_proposal issue #{proposal_issue_number}")
 
     # Close the module-needed issue with a pointer to the proposal
     _post_comment(
@@ -222,18 +222,18 @@ def _run_module_for_issue(issue: dict) -> None:
     )
     _remove_label(issue_number, MODULE_NEEDED_LABEL)
     _add_label(issue_number, MODULE_COMPLETE_LABEL)
-    print(f"[localbrain] #{issue_number}: done — labeled scd-module-complete")
+    print(f"[localbrain] #{issue_number}: done — labeled local-brain-complete")
 
 
 def _run_module_for_ticket(ticket_id: str) -> None:
     """Direct mode: fetch ticket from Jira, find pending issue, run module."""
     print(f"[localbrain] Direct mode for ticket {ticket_id}")
 
-    # Find the open scd-module-needed issue for this ticket
+    # Find the open local-brain-caller issue for this ticket
     issues = _list_open_issues_with_label(MODULE_NEEDED_LABEL)
     matching = [i for i in issues if ticket_id in i.get("title", "")]
     if not matching:
-        print(f"[localbrain] No open scd-module-needed issue found for {ticket_id}")
+        print(f"[localbrain] No open local-brain-caller issue found for {ticket_id}")
         print("Run GitHub Actions scan first to create the trigger issue.")
         sys.exit(1)
 
@@ -254,13 +254,13 @@ def _watch() -> None:
     processed_issues: set[int] = set()
 
     # On startup, process any already-open issues we haven't handled yet
-    print("[localbrain] Checking for existing open scd-module-needed issues...")
+    print("[localbrain] Checking for existing open local-brain-caller issues...")
     existing = _list_open_issues_with_label(MODULE_NEEDED_LABEL)
     for issue in existing:
         processed_issues.add(issue["number"])
         _run_module_for_issue(issue)
 
-    print(f"[localbrain] Watching {repo} for new scd-module-needed issues... (Ctrl+C to stop)")
+    print(f"[localbrain] Watching {repo} for new local-brain-caller issues... (Ctrl+C to stop)")
 
     while True:
         try:
@@ -314,7 +314,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="SCD Core Local Brain — runs modules requiring Playwright")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--watch", action="store_true", help="Watch GitHub for scd-module-needed issues")
+    group.add_argument("--watch", action="store_true", help="Watch GitHub for local-brain-caller issues")
     group.add_argument("--ticket", metavar="SCD-XXXXX", help="Run module for a specific ticket ID directly")
     args = parser.parse_args()
 

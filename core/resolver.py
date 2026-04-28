@@ -12,11 +12,11 @@ from core.resolution_suggestion import ResolutionSuggestion
 from dataclasses import asdict
 
 
-LABELS = ["scd-proposal", "awaiting-approval"]
+LABELS = ["give_proposal", "awaiting-approval"]
 GUIDANCE_LABEL = "scd-guidance-needed"   # added when module_confidence < 0.9
 CAPTURED_LABEL = "scd-guidance-captured"  # applied by the learn workflow after capture
-MODULE_NEEDED_LABEL = "scd-module-needed"  # posted by orchestrator when module needs local run
-MODULE_COMPLETE_LABEL = "scd-module-complete"  # posted by localbrain when module is done
+MODULE_NEEDED_LABEL = "local-brain-caller"  # posted by orchestrator when module needs local run
+MODULE_COMPLETE_LABEL = "local-brain-complete"  # posted by localbrain when module is done
 CONFIDENCE_THRESHOLD = 0.9              # below this → ask human for guidance
 REPO_ENV_VAR = "GITHUB_REPOSITORY"   # set automatically by GitHub Actions (owner/repo)
 GH_TOKEN_VAR = "GH_TOKEN"            # auto-injected Actions token — used only for GitHub Issues API
@@ -39,7 +39,7 @@ def _repo() -> str:
     return repo
 
 
-def post_proposal(
+def give_proposal(
     suggestion: ResolutionSuggestion,
     gate_summary: str,
 ) -> int:

@@ -1,6 +1,6 @@
 name: "SCD Core — Capture Rejection"
 
-# Fires when a human closes an scd-proposal issue WITHOUT approving it.
+# Fires when a human closes a give_proposal issue WITHOUT approving it.
 # If the issue had scd-executed, it was approved + executed — not a rejection.
 on:
   issues:
@@ -8,9 +8,9 @@ on:
 
 jobs:
   capture-rejection:
-    # Only fire for scd-proposal issues closed by a human (not the bot/executor)
+    # Only fire for give_proposal issues closed by a human (not the bot/executor)
     if: |
-      contains(github.event.issue.labels.*.name, 'scd-proposal') &&
+      contains(github.event.issue.labels.*.name, 'give_proposal') &&
       !contains(github.event.issue.labels.*.name, 'scd-executed') &&
       github.event.sender.type != 'Bot'
 

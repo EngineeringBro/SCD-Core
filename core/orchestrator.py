@@ -30,7 +30,7 @@ from core.jira_fetcher import JiraReadClient
 from core.registry import discover_modules
 from core import gatekeeper, state as state_store
 from core.router import classify as brain0_classify
-from core.resolver import post_proposal, post_module_needed, is_issue_closed
+from core.resolver import give_proposal, post_module_needed, is_issue_closed
 from core.learner import get_module_override
 
 # JQL to find open SCD tickets
@@ -128,7 +128,7 @@ def run() -> None:
         if module.needs_local_run:
             snapshot = {"ticket": ticket, "module": module.name}
             trigger_issue = post_module_needed(ticket_id, module.name, snapshot)
-            print(f"[orchestrator] {ticket_id}: needs_local_run — posted scd-module-needed issue #{trigger_issue}")
+            print(f"[orchestrator] {ticket_id}: needs_local_run — posted local-brain-caller issue #{trigger_issue}")
             state_store.mark_processed(current_state, ticket_id, proposal_issue=None)
             continue
 
@@ -161,7 +161,7 @@ def run() -> None:
         if hmac_key:
             _sign_suggestion(suggestion, hmac_key)
 
-        issue_number = post_proposal(suggestion, gate_summary)
+        issue_number = give_proposal(suggestion, gate_summary)
         print(f"[orchestrator] {ticket_id}: proposal posted as GitHub Issue #{issue_number}")
 
         state_store.mark_processed(current_state, ticket_id, proposal_issue=issue_number)
