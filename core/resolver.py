@@ -236,7 +236,7 @@ def _build_body(
         pre_exec_content = "No pre-execution needed."
 
     pre_exec_section = (
-        f"<details>\n<summary>🔧 Pre-Execution</summary>\n\n"
+        f"<details>\n<summary>🔧 Pre-Execution (manual steps before running Execute)</summary>\n\n"
         f"{pre_exec_content}\n\n"
         f"</details>"
     )
@@ -248,7 +248,7 @@ def _build_body(
 
     if suggestion.module == "orphaned_transaction":
         brief_steps = (
-            "If you run **Execute**, the agent will:\n\n"
+            "Run **SCD-Core: Execute** to automatically:\n\n"
             "1. Post a customer reply on the Jira ticket\n"
             "2. Post an internal comment on the Jira ticket\n"
             "3. Assign the ticket\n"
