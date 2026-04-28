@@ -46,8 +46,8 @@ class GeneralModule(Module):
 
         # Step 3 — LLM judge (inject any saved human guidance for this topic)
         if top_candidates:
-            learned_guidance = get_guidance_text(topic_name)
-            verified_count = count_verified_guidance(topic_name)
+            learned_guidance = get_guidance_text(topic_name, module_name=self.name)
+            verified_count = count_verified_guidance(topic_name, module_name=self.name)
             if learned_guidance:
                 print(f"[general] Injecting learned guidance for topic '{topic_name}' (verified={verified_count})")
             suggestion = core_cx_llm.judge(

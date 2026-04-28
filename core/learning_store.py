@@ -1,12 +1,15 @@
 """
-Learning Store — persistent human guidance for low-confidence tickets.
+Learning Store — persistent human knowledge, captured from human outcomes.
 
-Guidance is organised by Jira topic name. Each topic gets one YAML file:
-  knowledge/learned/<topic_slug>.yaml
+Memory is per-module — each module only learns from its own outcomes:
+  knowledge/learned/<module_name>/<topic_slug>.yaml
 
-When the CX pipeline runs, relevant guidance is loaded by module.py and
-injected into the core_cx_llm prompt so future tickets on the same topic
-start with an authoritative human answer rather than guessing from analogies.
+Two learning events feed this store:
+  1. Rejection: human closes a proposal issue with a comment
+  2. Execution: executor completes successfully
+
+Guidance is loaded by each module internally and injected into its own LLM
+prompt — no cross-module memory sharing.
 """
 from __future__ import annotations
 
@@ -18,7 +21,14 @@ from typing import Any
 import yaml  # PyYAML — already in requirements.txt
 
 # Relative to repo root; orchestrator / Actions both run from there.
-_KNOWLEDGE_DIR = Path("knowledge/learned")
+_KNOWLEDGE_BASE = Path("knowledge/learned")
+
+
+def _module_dir(module_name: str) -> Path:
+    """Return the per-module knowledge directory, creating it if needed."""
+    path = _KNOWLEDGE_BASE / module_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _topic_slug(topic: str) -> str:
@@ -30,12 +40,12 @@ def _topic_slug(topic: str) -> str:
 
 # ── Public read API ────────────────────────────────────────────────────────────
 
-def load_guidance(topic: str) -> list[dict[str, Any]]:
+def load_guidance(topic: str, module_name: str = "general") -> list[dict[str, Any]]:
     """
-    Return all saved guidance entries for *topic*.
-    Returns an empty list if the topic has no learned data yet.
+    Return all saved guidance entries for *topic* within *module_name*'s memory.
+    Returns an empty list if no data exists yet.
     """
-    path = _KNOWLEDGE_DIR / f"{_topic_slug(topic)}.yaml"
+    path = _module_dir(module_name) / f"{_topic_slug(topic)}.yaml"
     if not path.exists():
         return []
     with open(path, encoding="utf-8") as fh:
@@ -43,41 +53,37 @@ def load_guidance(topic: str) -> list[dict[str, Any]]:
     return data.get("entries", [])
 
 
-def get_guidance_text(topic: str) -> str | None:
+def get_guidance_text(topic: str, module_name: str = "general") -> str | None:
     """
-    Convenience wrapper: returns a ready-to-inject guidance block for the LLM
-    prompt, or None if no guidance exists for the topic.
+    Returns a ready-to-inject guidance block for the LLM prompt,
+    or None if no guidance exists for this module + topic combination.
 
     Format:
-        HUMAN-VERIFIED GUIDANCE (from {n} saved entr{y|ies}):
-        1. <guidance text>
-        2. <guidance text>
+        LEARNED GUIDANCE (from {n} entr{y|ies} for module '{module_name}'):
+        1. [executed] <guidance text>
+        2. [rejected] <guidance text>
         ...
     """
-    entries = load_guidance(topic)
+    entries = load_guidance(topic, module_name=module_name)
     if not entries:
         return None
-    lines = [f"HUMAN-VERIFIED GUIDANCE ({len(entries)} saved {'entry' if len(entries) == 1 else 'entries'} for topic \"{topic}\"):"]
+    lines = [f"LEARNED GUIDANCE ({len(entries)} {'entry' if len(entries) == 1 else 'entries'} for module '{module_name}', topic \"{topic}\"):"]
     for i, e in enumerate(entries, 1):
         by = e.get("provided_by", "unknown")
-        verified = " [verified]" if e.get("verified") else " [unverified]"
-        lines.append(f"{i}. [{by}{verified}] {e.get('guidance', '').strip()}")
+        outcome = e.get("outcome", "unknown")
+        lines.append(f"{i}. [{outcome} by {by}] {e.get('guidance', '').strip()}")
     return "\n".join(lines)
 
 
-def count_verified_guidance(topic: str) -> int:
-    """Return the number of verified guidance entries for *topic*.
-    Used by the confidence formula — only verified entries earn full trust.
-    """
-    entries = load_guidance(topic)
-    return sum(1 for e in entries if e.get("verified"))
+def count_verified_guidance(topic: str, module_name: str = "general") -> int:
+    """Return the count of executed (positive) guidance entries for this module + topic."""
+    entries = load_guidance(topic, module_name=module_name)
+    return sum(1 for e in entries if e.get("outcome") == "executed")
 
 
-def mark_guidance_verified(topic: str, ticket_id: str) -> None:
-    """Mark all guidance entries for *ticket_id* in *topic* as verified.
-    Call this when a ticket resolved using this guidance is confirmed correct.
-    """
-    path = _KNOWLEDGE_DIR / f"{_topic_slug(topic)}.yaml"
+def mark_guidance_verified(topic: str, ticket_id: str, module_name: str = "general") -> None:
+    """Mark all guidance entries for *ticket_id* in this module + topic as verified."""
+    path = _module_dir(module_name) / f"{_topic_slug(topic)}.yaml"
     if not path.exists():
         return
     with open(path, encoding="utf-8") as fh:
@@ -91,7 +97,7 @@ def mark_guidance_verified(topic: str, ticket_id: str) -> None:
         data["last_updated"] = datetime.now(timezone.utc).isoformat()
         with open(path, "w", encoding="utf-8") as fh:
             yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
-        print(f"[learning_store] Marked guidance verified: topic='{topic}' ticket={ticket_id}")
+        print(f"[learning_store] Marked verified: module={module_name} topic='{topic}' ticket={ticket_id}")
 
 
 # ── Public write API ───────────────────────────────────────────────────────────
@@ -102,18 +108,20 @@ def save_guidance(
     guidance: str,
     provided_by: str,
     issue_number: int,
+    module_name: str = "general",
+    outcome: str = "unknown",
     module_override: str | None = None,
 ) -> None:
     """
-    Append a new guidance entry for *topic*.
-    Creates ``knowledge/learned/<slug>.yaml`` if it doesn't exist.
+    Append a new guidance entry for *module_name* + *topic*.
+    Creates ``knowledge/learned/<module>/<slug>.yaml`` if it doesn't exist.
 
+    outcome: 'rejected' | 'executed' | 'unknown'
     If *module_override* is provided, it is stored per-ticket so the orchestrator
     can force-route future runs of that ticket to the specified module.
     """
     slug = _topic_slug(topic)
-    _KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _KNOWLEDGE_DIR / f"{slug}.yaml"
+    path = _module_dir(module_name) / f"{slug}.yaml"
 
     if path.exists():
         with open(path, encoding="utf-8") as fh:
@@ -127,6 +135,7 @@ def save_guidance(
         "provided_by": provided_by,
         "provided_at": datetime.now(timezone.utc).isoformat(),
         "issue_number": issue_number,
+        "outcome": outcome,
     }
     if module_override:
         entry["module_override"] = module_override
@@ -143,18 +152,37 @@ def save_guidance(
     with open(path, "w", encoding="utf-8") as fh:
         yaml.safe_dump(data, fh, allow_unicode=True, sort_keys=False)
 
-    print(f"[learning_store] Saved guidance for topic='{topic}' (slug={slug})")
+    print(f"[learning_store] Saved: module={module_name} topic='{topic}' outcome={outcome} ticket={ticket_id}")
 
 
 def get_module_override(topic: str, ticket_id: str) -> str | None:
     """
     Return the module name a human has instructed for *ticket_id* within *topic*,
     or None if no override exists.
+    Checks all module directories — overrides are not module-scoped.
     """
-    path = _KNOWLEDGE_DIR / f"{_topic_slug(topic)}.yaml"
+    slug = _topic_slug(topic)
+    # Search all module subdirectories for an override for this ticket
+    if _KNOWLEDGE_BASE.exists():
+        for module_dir in _KNOWLEDGE_BASE.iterdir():
+            path = module_dir / f"{slug}.yaml"
+            if not path.exists():
+                # Also check unknown slug
+                path = module_dir / "unknown.yaml"
+            if path.exists():
+                with open(path, encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+                override = data.get("ticket_overrides", {}).get(ticket_id)
+                if override:
+                    return override
+    return None
+
+
+def _get_module_override_legacy(topic: str, ticket_id: str) -> str | None:
+    """Legacy single-file lookup — kept for migration reference."""
+    path = _KNOWLEDGE_BASE / f"{_topic_slug(topic)}.yaml"
     if not path.exists():
-        # Also check the 'unknown' slug used when topic is not yet set
-        path = _KNOWLEDGE_DIR / "unknown.yaml"
+        path = _KNOWLEDGE_BASE / "unknown.yaml"
         if not path.exists():
             return None
     with open(path, encoding="utf-8") as fh:

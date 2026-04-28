@@ -22,6 +22,7 @@ from core.jira_clients import JiraReadClient, JiraWriteClient
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from core.notification_logs import append_row
 from core.resolver import close_proposal
+from core.learner import on_execution as learner_on_execution
 import core.state as state_store
 
 # Field option lookups for field updates
@@ -102,7 +103,15 @@ def run(
         f"✅ **Execution complete** for `{ticket_id}`.\n\n```\n{summary}\n```",
     )
     print(f"[executor] Execution complete for {ticket_id}.")
-
+    # Step 6 — Learner: capture what worked for this module + topic
+    topic = suggestion.sub_agent_attribution.get("topic", "Unknown")
+    learner_on_execution(
+        module_name=suggestion.module,
+        topic=topic,
+        ticket_id=ticket_id,
+        suggestion=suggestion,
+        issue_number=proposal_issue_number,
+    )
 
 def _revalidate(suggestion: ResolutionSuggestion, jira: JiraReadClient) -> list[dict]:
     """Check each revalidation target against current Jira state. Returns list of diffs."""
