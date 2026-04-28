@@ -178,43 +178,48 @@ def _run_module_for_issue(issue: dict) -> None:
         print(f"[localbrain] #{issue_number}: module run failed — {exc}")
         return
 
-    # Format result as issue comment
-    from dataclasses import asdict
-    suggestion_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+    # Pass suggestion through Gatekeeper → same path as any other module
+    from core import gatekeeper
+    from core.resolver import post_proposal
 
-    # Build SQL blocks
-    sql_actions = [a for a in suggestion.actions if a.type == "sql"]
-    jira_actions = [a for a in suggestion.actions if a.type != "sql"]
+    gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
+    gate_summary = (
+        f"ALLOW ({len(gate_result.checks)} checks passed)"
+        if gate_result.passed
+        else f"DENY — {'; '.join(c.reason for c in gate_result.failures)}"
+    )
+    print(f"[localbrain] #{issue_number}: gatekeeper => {gate_result.verdict}")
 
-    sql_section = ""
-    if sql_actions:
-        sql_blocks = "\n\n".join(
-            f"```sql\n{a.payload.get('statement', '(no statement)')}\n```"
-            for a in sql_actions
+    if not gate_result.passed:
+        _post_comment(
+            issue_number,
+            f"## ❌ Gatekeeper DENY\n\n{gate_summary}\n\nManual review required.",
         )
-        sql_section = f"## 1️⃣ Run This SQL First\n\n{sql_blocks}\n\n> Run against RepairQ DB and confirm before triggering Execute.\n\n"
+        _remove_label(issue_number, MODULE_NEEDED_LABEL)
+        _add_label(issue_number, MODULE_COMPLETE_LABEL)
+        print(f"[localbrain] #{issue_number}: gatekeeper DENY — proposal blocked")
+        return
 
-    jira_steps_md = "".join(
-        f"- **{a.type}**: `{json.dumps(a.payload, ensure_ascii=False)}`\n"
-        for a in jira_actions
+    # Sign HMAC if key is available
+    hmac_key = os.environ.get("PROPOSAL_HMAC_KEY", "")
+    if hmac_key:
+        import hashlib, hmac as _hmac
+        from dataclasses import asdict as _asdict
+        payload = json.dumps(_asdict(suggestion), sort_keys=True, ensure_ascii=False)
+        payload_unsigned = json.loads(payload)
+        payload_unsigned["hmac_signature"] = ""
+        canonical = json.dumps(payload_unsigned, sort_keys=True, ensure_ascii=False).encode()
+        suggestion.hmac_signature = _hmac.new(hmac_key.encode(), canonical, hashlib.sha256).hexdigest()
+
+    # Post scd-proposal issue (same as orchestrator path)
+    proposal_issue_number = post_proposal(suggestion, gate_summary)
+    print(f"[localbrain] #{issue_number}: posted scd-proposal issue #{proposal_issue_number}")
+
+    # Close the module-needed issue with a pointer to the proposal
+    _post_comment(
+        issue_number,
+        f"✅ Module complete. Proposal posted as issue #{proposal_issue_number} — review and trigger Execute there.",
     )
-    jira_section = f"## 2️⃣ Jira Steps (Execute will apply)\n\n{jira_steps_md}\n" if jira_steps_md else ""
-
-    comment_body = (
-        f"## ✅ Module Complete — `{module_name}` v{suggestion.module_version}\n\n"
-        f"| Field | Value |\n|-------|-------|\n"
-        f"| **Ticket** | `{ticket_id}` |\n"
-        f"| **Confidence** | {suggestion.module_confidence:.0%} |\n\n"
-        f"### Diagnosis\n{suggestion.diagnosis}\n\n"
-        f"{sql_section}"
-        f"{jira_section}"
-        f"<details>\n<summary>Full Action Plan JSON</summary>\n\n"
-        f"```json\n{suggestion_json}\n```\n</details>\n\n"
-        f"---\n**Next step**: Run SQL above, then trigger **SCD Core — Execute** "
-        f"with `ticket_id={ticket_id}` and `proposal_issue_number={issue_number}`."
-    )
-
-    _post_comment(issue_number, comment_body)
     _remove_label(issue_number, MODULE_NEEDED_LABEL)
     _add_label(issue_number, MODULE_COMPLETE_LABEL)
     print(f"[localbrain] #{issue_number}: done — labeled scd-module-complete")
