@@ -91,6 +91,11 @@ def run(
         execution_log.append(f"Step {action.step} ({action.type}): {result}")
         print(f"[executor] {execution_log[-1]}")
 
+    # Step 9 — Orphaned transaction: Jira close sequence (conditioned on module)
+    if suggestion.module == "orphaned_transaction":
+        step9_log = _execute_orphaned_tx_close(ticket_id, jira_write)
+        execution_log.extend(step9_log)
+
     # Step 4 — Update state
     current_state = state_store.load()
     state_store.mark_processed(current_state, ticket_id, proposal_issue_number)
@@ -112,6 +117,48 @@ def run(
         suggestion=suggestion,
         issue_number=proposal_issue_number,
     )
+
+def _execute_orphaned_tx_close(ticket_id: str, jira: JiraWriteClient) -> list[str]:
+    """Step 9: post comments, assign, log time for orphaned_transaction resolution."""
+    log: list[str] = []
+
+    # 9a — Public customer comment
+    customer_msg = "Hello,\n\nWe have added the transaction(s). Let us know if you need anything else!"
+    jira.add_comment(ticket_id, _text_to_adf(customer_msg), internal=False)
+    log.append("Step 9a (jira_public_comment): posted customer reply")
+    print(f"[executor] Step 9a: customer comment posted on {ticket_id}")
+
+    # 9b — Internal comment
+    internal_msg = "This ticket was resolved using my AI Agent"
+    jira.add_comment(ticket_id, _text_to_adf(internal_msg), internal=True)
+    log.append("Step 9b (jira_internal_comment): posted internal comment")
+    print(f"[executor] Step 9b: internal comment posted on {ticket_id}")
+
+    # 9c — Assign to executing user (resolved via /myself)
+    jira_email = os.environ.get("JIRA_EMAIL", "")
+    if jira_email:
+        try:
+            account_id = jira.find_user_account_id(jira_email)
+            jira.assign_user(ticket_id, account_id)
+            log.append(f"Step 9c (jira_assign): assigned to {jira_email}")
+            print(f"[executor] Step 9c: assigned {ticket_id} to {jira_email}")
+        except Exception as exc:  # noqa: BLE001
+            log.append(f"Step 9c (jira_assign): skipped — {exc}")
+            print(f"[executor] Step 9c: assign failed — {exc}")
+    else:
+        log.append("Step 9c (jira_assign): skipped — JIRA_EMAIL not set")
+
+    # 9d — Log 30 minutes
+    try:
+        jira.add_worklog(ticket_id, "30m")
+        log.append("Step 9d (jira_log_time): logged 30m")
+        print(f"[executor] Step 9d: logged 30m on {ticket_id}")
+    except Exception as exc:  # noqa: BLE001
+        log.append(f"Step 9d (jira_log_time): skipped — {exc}")
+        print(f"[executor] Step 9d: worklog failed — {exc}")
+
+    return log
+
 
 def _revalidate(suggestion: ResolutionSuggestion, jira: JiraReadClient) -> list[dict]:
     """Check each revalidation target against current Jira state. Returns list of diffs."""
