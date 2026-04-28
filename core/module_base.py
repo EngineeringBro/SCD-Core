@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.resolution_suggestion import ResolutionSuggestion
-    from core.jira_clients import JiraReadClient
+    from core.jira_fetcher import JiraReadClient
 
 
 class Module(ABC):

@@ -1,0 +1,87 @@
+name: "SCD Core — Capture Rejection"
+
+# Fires when a human closes an scd-proposal issue WITHOUT approving it.
+# If the issue had scd-executed, it was approved + executed — not a rejection.
+on:
+  issues:
+    types: [closed]
+
+jobs:
+  capture-rejection:
+    # Only fire for scd-proposal issues closed by a human (not the bot/executor)
+    if: |
+      contains(github.event.issue.labels.*.name, 'scd-proposal') &&
+      !contains(github.event.issue.labels.*.name, 'scd-executed') &&
+      github.event.sender.type != 'Bot'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # commit knowledge/ updates back
+      issues: write     # post confirmation comment
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install "PyYAML>=6.0"
+
+      # Fetch the last human comment on the issue — that's the rejection reason.
+      # If no comment exists, CLOSING_COMMENT will be empty and the script exits cleanly.
+      - name: Get last human comment
+        id: closing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          REPO="${{ github.repository }}"
+
+          comment_body=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" \
+            --jq '[ .[] | select(.user.type != "Bot") ] | last | .body // ""')
+          comment_user=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" \
+            --jq '[ .[] | select(.user.type != "Bot") ] | last | .user.login // "${{ github.event.sender.login }}"')
+
+          # Write multiline body safely using heredoc delimiter
+          EOF=$(openssl rand -hex 8)
+          echo "body<<${EOF}" >> "$GITHUB_OUTPUT"
+          echo "${comment_body}" >> "$GITHUB_OUTPUT"
+          echo "${EOF}" >> "$GITHUB_OUTPUT"
+
+          echo "user=${comment_user}" >> "$GITHUB_OUTPUT"
+
+      - name: Capture rejection into knowledge store
+        env:
+          ISSUE_BODY:       ${{ github.event.issue.body }}
+          ISSUE_TITLE:      ${{ github.event.issue.title }}
+          ISSUE_NUMBER:     ${{ github.event.issue.number }}
+          CLOSING_COMMENT:  ${{ steps.closing.outputs.body }}
+          CLOSER:           ${{ steps.closing.outputs.user }}
+        run: python scripts/capture_rejection.py
+
+      - name: Commit knowledge update
+        run: |
+          git config user.name  "scd-core-bot"
+          git config user.email "scd-core-bot@users.noreply.github.com"
+          git add knowledge/
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "learn: rejection captured for issue #${{ github.event.issue.number }} by @${{ steps.closing.outputs.user }}"
+            git push
+          fi
+
+      - name: Post acknowledgement comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CLOSING_COMMENT="${{ steps.closing.outputs.body }}"
+          if [ -n "$CLOSING_COMMENT" ]; then
+            gh issue comment ${{ github.event.issue.number }} \
+              --body "🧠 **Rejection captured.** Your feedback has been stored in the knowledge base — this module will apply it to future similar tickets."
+          fi

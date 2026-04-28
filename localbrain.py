@@ -147,7 +147,7 @@ def _run_module_for_issue(issue: dict) -> None:
     # Import and run the module
     try:
         from core.registry import discover_modules
-        from core.jira_clients import JiraReadClient
+        from core.jira_fetcher import JiraReadClient
         module_map = discover_modules()
         module = module_map.get(module_name)
         if module is None:

@@ -26,7 +26,7 @@ import hmac as _hmac
 import json
 import os
 from dataclasses import asdict
-from core.jira_clients import JiraReadClient
+from core.jira_fetcher import JiraReadClient
 from core.registry import discover_modules
 from core import gatekeeper, state as state_store
 from core.router import classify as brain0_classify

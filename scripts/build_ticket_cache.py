@@ -58,7 +58,7 @@ from pathlib import Path
 
 # Allow importing from core/ when run as `python scripts/build_ticket_cache.py`
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.jira_clients import JiraReadClient  # noqa: E402
+from core.jira_fetcher import JiraReadClient  # noqa: E402
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 

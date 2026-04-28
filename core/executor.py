@@ -18,7 +18,7 @@ import os
 import sys
 import yaml
 from dataclasses import asdict
-from core.jira_clients import JiraReadClient, JiraWriteClient
+from core.jira_fetcher import JiraReadClient, JiraWriteClient
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from core.notification_logs import append_row
 from core.resolver import close_proposal

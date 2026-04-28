@@ -20,6 +20,7 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 BRAIN0_MODEL = "gpt-4o-mini"
+BRAIN0_FALLBACK_MODEL = "claude-sonnet-4-5"
 MAX_TOKENS = 100
 COPILOT_BASE_URL = "https://api.business.githubcopilot.com"
 
@@ -45,7 +46,10 @@ _SYSTEM_PROMPT = (
 def classify(ticket: dict) -> str:
     """
     Classify a ticket into a module name.
-    Falls back to deterministic topic-field matching if LLM is unavailable.
+    Tier 1: GPT-4o-mini (fast, cheap).
+    Tier 2: Sonnet fallback if mini returns 'general' on a non-obvious ticket,
+            or if mini call fails entirely.
+    Tier 3: Deterministic topic-field rules if both LLM calls fail.
     Returns a module name string — always.
     """
     gh_token = os.environ.get("COPILOT_TOKEN", "")
@@ -55,9 +59,41 @@ def classify(ticket: dict) -> str:
     client = OpenAI(api_key=gh_token, base_url=COPILOT_BASE_URL)
     prompt = _build_prompt(ticket)
 
+    # Tier 1: mini
+    mini_result = _call_llm(client, BRAIN0_MODEL, prompt)
+    if mini_result and mini_result != "general":
+        return mini_result
+
+    # Tier 2: Sonnet — when mini failed or returned 'general' (uncertain)
+    if mini_result == "general":
+        # Only escalate to Sonnet if deterministic rules also say general
+        # (avoids wasting Sonnet on tickets where topic field is definitive)
+        deterministic = _deterministic_fallback(ticket)
+        if deterministic != "general":
+            print(f"[router] mini→general but deterministic→{deterministic}, trusting deterministic")
+            return deterministic
+        print("[router] mini→general + no deterministic match — escalating to Sonnet")
+    else:
+        print("[router] mini call failed — escalating to Sonnet")
+
+    sonnet_result = _call_llm(client, BRAIN0_FALLBACK_MODEL, prompt)
+    if sonnet_result:
+        print(f"[router] Sonnet classified as '{sonnet_result}'")
+        return sonnet_result
+
+    # Tier 3: deterministic rules
+    print("[router] Both LLM tiers failed — using deterministic fallback")
+    return _deterministic_fallback(ticket)
+
+
+def _call_llm(client: "OpenAI", model: str, prompt: str) -> str | None:
+    """
+    Call the given model with the classification prompt.
+    Returns the module name string, or None if the call fails or returns unknown.
+    """
     try:
         response = client.chat.completions.create(
-            model=BRAIN0_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
@@ -74,12 +110,12 @@ def classify(ticket: dict) -> str:
         parsed = json.loads(stripped)
         module_name = parsed.get("module", "general")
         if module_name not in KNOWN_MODULES:
-            print(f"[router] Unknown module '{module_name}' — falling back to general")
-            return "general"
+            print(f"[router] {model}: unknown module '{module_name}' — ignoring")
+            return None
         return module_name
     except (ValueError, KeyError, json.JSONDecodeError, OSError) as exc:
-        print(f"[router] LLM call failed ({type(exc).__name__}: {exc}) — using deterministic fallback")
-        return _deterministic_fallback(ticket)
+        print(f"[router] {model} call failed ({type(exc).__name__}: {exc})")
+        return None
 
 
 def _build_prompt(ticket: dict) -> str:
