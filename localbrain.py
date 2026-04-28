@@ -146,14 +146,25 @@ def _run_module_for_issue(issue: dict) -> None:
 
     # Import and run the module
     try:
-        from core.registry import discover_modules
-        from core.jira_fetcher import JiraReadClient
-        module_map = discover_modules()
-        module = module_map.get(module_name)
-        if module is None:
-            raise ValueError(f"Module '{module_name}' not found in loaded modules: {list(module_map.keys())}")
+        if module_name == "orphaned_transaction":
+            # Use the self-contained localbrain/ copy — full Brain1+Playwright agentic loop.
+            # Step 9 (Jira edits) is intentionally excluded here; the executor handles it
+            # after human approval of the generated SQL + action plan.
+            _lb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localbrain")
+            if _lb_path not in sys.path:
+                sys.path.insert(0, _lb_path)
+            from module import OrphanedTransactionModule  # localbrain/module.py
+            module = OrphanedTransactionModule()
+            jira = None  # Brain1 uses Playwright directly — Jira read client not needed
+        else:
+            from core.registry import discover_modules
+            from core.jira_fetcher import JiraReadClient
+            module_map = discover_modules()
+            module = module_map.get(module_name)
+            if module is None:
+                raise ValueError(f"Module '{module_name}' not found in loaded modules: {list(module_map.keys())}")
+            jira = JiraReadClient()
 
-        jira = JiraReadClient()
         suggestion = module.run(ticket_data, jira)
 
     except (ImportError, ValueError, RuntimeError) as exc:
