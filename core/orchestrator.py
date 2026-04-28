@@ -31,7 +31,7 @@ from core.registry import discover_modules
 from core import gatekeeper, state as state_store
 from core.router import classify as brain0_classify
 from core.resolver import post_proposal, post_module_needed, is_issue_closed
-from core.learning_store import get_module_override
+from core.learner import get_module_override
 
 # JQL to find open SCD tickets
 JQL_BASE = (

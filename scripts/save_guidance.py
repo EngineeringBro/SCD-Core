@@ -20,7 +20,7 @@ import sys
 # Run from repo root: python scripts/save_guidance.py
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.learning_store import save_guidance
+from core.learner import save_guidance
 
 # Canonical module names the agent knows about.
 _KNOWN_MODULES = {

@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from core.module_base import Module
 from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
-from core.learning_store import get_guidance_text, count_verified_guidance
+from core.learner import get_guidance_text, count_verified_guidance
 from modules.general_module_v0_2 import core_cx_retriever, core_cx_reranker, core_cx_llm
 from modules.general_module_v0_2.core_cx_reranker import ScoredCandidate
 import os
