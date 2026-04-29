@@ -173,6 +173,21 @@ class OrphanedTransactionModule(Module):
         extraction_result = self._run_brain1_loop(ticket_id, fields, base_url, rq_ticket)
         sql_statements = _fill_sql(extraction_result, rq_ticket)
         confidence = 0.93 if extraction_result.get("extraction_complete") else 0.40
+        transaction_word = "transactions" if len(sql_statements) > 1 else "transaction"
+        closing_actions: list[Action] = []
+        if extraction_result.get("extraction_complete"):
+            closing_actions = [
+                Action(
+                    step=len(sql_statements) + 4,
+                    type="jira_internal_note",
+                    payload={"body": "This ticket was resolved using my AI Agent", "public": False},
+                ),
+                Action(
+                    step=len(sql_statements) + 5,
+                    type="jira_public_comment",
+                    payload={"body": f"Hello,\n\nWe have added the {transaction_word}. Let us know if you need anything else!"},
+                ),
+            ]
 
         return ResolutionSuggestion(
             ticket_id=ticket_id,
@@ -226,7 +241,7 @@ class OrphanedTransactionModule(Module):
                     type="jira_transition",
                     payload={"to": "Resolved", "resolution": "Fixed / Completed"},
                 ),
-            ],
+            ] + closing_actions,
             module_confidence=confidence,
             module_notes=(
                 "Brain 1 + Playwright agentic extraction. "

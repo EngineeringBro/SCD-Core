@@ -14,7 +14,7 @@ TERMINAL_STATUSES = frozenset([
 
 # Action types that are always safe (no write risk)
 SAFE_ACTION_TYPES = frozenset([
-    "jira_internal_comment",
+    "jira_internal_note",
     "jira_public_comment",
     "jira_transition",
     "jira_field_update",
@@ -97,20 +97,30 @@ def _check_action(action: Action, suggestion: ResolutionSuggestion) -> list[Gate
             passed="{" not in body,
             reason="Public comment body contains unfilled placeholders." if "{" in body else "",
         ))
-
-    if action.type == "jira_internal_comment":
-        # For orphaned_transaction, only the predefined internal comment is allowed.
-        # Any AI-generated or custom internal comment body is rejected — no exceptions.
         if suggestion.module == "orphaned_transaction":
-            allowed = "This ticket was resolved using my AI Agent"
-            body = action.payload.get("body", "")
+            _allowed_comments = {
+                "Hello,\n\nWe have added the transaction. Let us know if you need anything else!",
+                "Hello,\n\nWe have added the transactions. Let us know if you need anything else!",
+            }
             checks.append(GateCheck(
-                rule_id=f"step{action.step}.internal_comment_predefined_only",
-                passed=body == allowed,
-                reason=(
-                    f"orphaned_transaction internal comment must be exactly '{allowed}' — "
-                    f"got: '{body[:80]}'"
-                ) if body != allowed else "",
+                rule_id=f"step{action.step}.orphaned_tx_public_comment_exact",
+                passed=body in _allowed_comments,
+                reason="Public comment body does not match the predefined orphaned_transaction template." if body not in _allowed_comments else "",
+            ))
+    if action.type == "jira_internal_note":
+        body = action.payload.get("body", "")
+        if suggestion.module == "orphaned_transaction":
+            _exact_note = "This ticket was resolved using my AI Agent"
+            checks.append(GateCheck(
+                rule_id=f"step{action.step}.orphaned_tx_internal_note_exact",
+                passed=body == _exact_note,
+                reason=f"Internal note body must be exactly: '{_exact_note}'" if body != _exact_note else "",
+            ))
+        else:
+            checks.append(GateCheck(
+                rule_id=f"step{action.step}.internal_note_nonempty",
+                passed=bool(body.strip()),
+                reason="Internal note body is empty." if not body.strip() else "",
             ))
 
     return checks
@@ -120,17 +130,24 @@ def _check_sql(action: Action, suggestion: ResolutionSuggestion) -> list[GateChe
     checks: list[GateCheck] = []
     stmt = action.payload.get("statement", "").upper()
     rollback = action.payload.get("rollback", "")
+    is_orphaned_tx = suggestion.module == "orphaned_transaction"
 
-    checks.append(GateCheck(
-        rule_id=f"step{action.step}.sql_has_where",
-        passed="WHERE" in stmt,
-        reason="SQL statement missing WHERE clause." if "WHERE" not in stmt else "",
-    ))
-    checks.append(GateCheck(
-        rule_id=f"step{action.step}.sql_has_rollback",
-        passed=bool(rollback.strip()),
-        reason="SQL action missing rollback statement." if not rollback.strip() else "",
-    ))
+    # orphaned_transaction uses INSERT (no WHERE needed) — waive this check
+    if not is_orphaned_tx:
+        checks.append(GateCheck(
+            rule_id=f"step{action.step}.sql_has_where",
+            passed="WHERE" in stmt,
+            reason="SQL statement missing WHERE clause." if "WHERE" not in stmt else "",
+        ))
+
+    # rollback waived for orphaned_transaction — execute is manual-only (human approval required)
+    if not is_orphaned_tx:
+        checks.append(GateCheck(
+            rule_id=f"step{action.step}.sql_has_rollback",
+            passed=bool(rollback.strip()),
+            reason="SQL action missing rollback statement." if not rollback.strip() else "",
+        ))
+
     checks.append(GateCheck(
         rule_id=f"step{action.step}.sql_no_drop",
         passed="DROP" not in stmt and "TRUNCATE" not in stmt,
