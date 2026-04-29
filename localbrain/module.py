@@ -288,14 +288,24 @@ class OrphanedTransactionModule(Module):
             print("[orphaned_tx] playwright not installed — run: pip install playwright")
             return {"extraction_complete": False, "transactions": []}
 
+        cdp_url = os.environ.get("CHROME_CDP_URL", "http://localhost:9222")
+
         with sync_playwright() as pw:
-            browser = pw.chromium.launch_persistent_context(
-                user_data_dir=chrome_profile,
-                headless=False,
-                channel="chrome",
-                args=["--no-first-run", "--no-default-browser-check"],
-            )
-            page = browser.new_page()
+            # Connect to already-running Chrome (must be launched with --remote-debugging-port=9222)
+            try:
+                browser = pw.chromium.connect_over_cdp(cdp_url)
+                ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                print(f"[orphaned_tx] Connected to existing Chrome via CDP at {cdp_url}")
+            except Exception as cdp_exc:
+                print(f"[orphaned_tx] CDP connect failed ({cdp_exc}) — falling back to persistent context")
+                browser = pw.chromium.launch_persistent_context(
+                    user_data_dir=chrome_profile,
+                    headless=False,
+                    channel="chrome",
+                    args=["--no-first-run", "--no-default-browser-check", "--remote-debugging-port=9222"],
+                )
+                page = browser.new_page()
 
             try:
                 for _turn in range(MAX_TOOL_TURNS):
@@ -371,7 +381,11 @@ class OrphanedTransactionModule(Module):
                         })
 
             finally:
-                browser.close()
+                # CDP connection — disconnect only, don't close the user's browser
+                try:
+                    browser.disconnect()
+                except Exception:
+                    pass
 
         print(f"[orphaned_tx] Max turns ({MAX_TOOL_TURNS}) reached without final answer")
         return {"extraction_complete": False, "transactions": []}
