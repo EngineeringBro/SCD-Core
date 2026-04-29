@@ -1,5 +1,5 @@
 {
-  "last_run": "2026-04-29T16:30:05.179813+00:00",
+  "last_run": "2026-04-29T16:38:02.958491+00:00",
   "processed_tickets": {
     "SCD-141990": {
       "processed_at": "2026-04-26T12:39:31.282877+00:00",
@@ -14,8 +14,9 @@
       "proposal_issue": 16
     },
     "SCD-141831": {
-      "processed_at": "2026-04-29T16:30:05.179791+00:00",
-      "proposal_issue": null
+      "processed_at": "2026-04-29T16:38:02.958464+00:00",
+      "proposal_issue": null,
+      "local_brain_caller_issue": 22
     }
   },
   "archived_tickets": {
