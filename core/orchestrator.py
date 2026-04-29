@@ -30,7 +30,7 @@ from core.jira_fetcher import JiraReadClient
 from core.registry import discover_modules
 from core import gatekeeper, state as state_store
 from core.router import classify as brain0_classify
-from core.resolver import give_proposal, post_module_needed, is_issue_closed
+from core.resolver import give_proposal, post_module_needed, post_hold_notice, is_issue_closed
 from core.learner import get_module_override
 
 # JQL to find open SCD tickets
@@ -109,24 +109,6 @@ def run() -> None:
                 skipped_state += 1
                 continue
 
-        # Skip any ticket where a comment contains the opt-out phrase.
-        # To exempt a ticket: add an internal comment containing "scd-core: skip"
-        # or the legacy phrase "leave this ticket as is".
-        comments_raw = (ticket.get("fields", {}).get("comment") or {}).get("comments", [])
-        skip_phrases = ("scd-core: skip", "leave this ticket as is")
-        def _comment_text(c: dict) -> str:
-            body = c.get("body") or {}
-            parts = []
-            for block in body.get("content", []):
-                for inline in block.get("content", []):
-                    if inline.get("type") == "text":
-                        parts.append(inline.get("text", ""))
-            return " ".join(parts).lower()
-        if any(phrase in _comment_text(c) for c in comments_raw for phrase in skip_phrases):
-            print(f"[orchestrator] {ticket_id}: opt-out phrase found in comment — skipping")
-            skipped_state += 1
-            continue
-
         # Check if a human has instructed a specific module for this ticket
         ticket_topic = (ticket.get("fields", {}).get("customfield_10170") or {}).get("value", "Unknown")
         forced_module_name = get_module_override(ticket_topic, ticket_id)
@@ -134,8 +116,37 @@ def run() -> None:
             module = module_map[forced_module_name]
             print(f"[orchestrator] {ticket_id}: human override — force-routed to '{module.name}'")
         else:
-            # Step 2: Router — classify ticket into a module name
+            # Step 2: Router — classify ticket into a module name (includes hold detection)
             module_name = brain0_classify(ticket)
+
+            if module_name == "hold":
+                # Router detected a human instruction in comments to leave ticket alone.
+                # Check if a previous hold notice for this ticket was overridden with 'scd-core: proceed'.
+                prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
+                prev_hold_issue = prev_entry.get("hold_issue")
+                proceed_override = False
+                if prev_hold_issue:
+                    # Check if anyone commented 'scd-core: proceed' on the hold issue
+                    proceed_override = _hold_issue_has_proceed(prev_hold_issue)
+
+                if proceed_override:
+                    print(f"[orchestrator] {ticket_id}: hold overridden via 'scd-core: proceed' on issue #{prev_hold_issue} — continuing")
+                else:
+                    # Post hold notice if we haven't already
+                    if not prev_hold_issue:
+                        hold_issue = post_hold_notice(ticket_id, "")
+                        print(f"[orchestrator] {ticket_id}: hold notice posted as issue #{hold_issue}")
+                        current_state.setdefault("processed_tickets", {})[ticket_id] = {"hold_issue": hold_issue}
+                    else:
+                        print(f"[orchestrator] {ticket_id}: hold notice already posted as issue #{prev_hold_issue} — skipping")
+                    skipped_gate += 1
+                    continue
+
+                # Override granted — re-classify for actual module
+                module_name = brain0_classify(ticket)
+                if module_name == "hold":
+                    module_name = "general"  # fallback if router still says hold after override
+
             module = module_map.get(module_name)
             if module is None:
                 print(f"[orchestrator] {ticket_id}: Router returned '{module_name}' but module not loaded — skipping")
@@ -205,6 +216,28 @@ def run() -> None:
     os.makedirs("run-trace", exist_ok=True)
     with open("run-trace/summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+
+
+def _hold_issue_has_proceed(issue_number: int) -> bool:
+    """Check if the hold notice GitHub Issue has a 'scd-core: proceed' comment."""
+    import urllib.request
+    repo = os.environ.get("GITHUB_REPO", os.environ.get("GITHUB_REPOSITORY", ""))
+    token = os.environ.get("GH_TOKEN", "")
+    if not repo or not token:
+        return False
+    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments?per_page=50"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            comments = json.loads(r.read())
+        return any("scd-core: proceed" in (c.get("body") or "").lower() for c in comments)
+    except OSError:
+        return False
 
 
 if __name__ == "__main__":

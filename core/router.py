@@ -29,6 +29,7 @@ KNOWN_MODULES = [
     "spam",
     "auto_notification",
     "general",
+    "hold",
 ]
 
 _SYSTEM_PROMPT = (
@@ -37,9 +38,14 @@ _SYSTEM_PROMPT = (
     "- orphaned_transaction: payment transaction processed but not linked to a repair ticket\n"
     "- spam: junk, noise, test tickets, automated alerts with no action needed\n"
     "- auto_notification: automated system notifications (Revv sync errors, Assurant emails)\n"
+    "- hold: a human comment instructs the team to leave this ticket alone, not process it, "
+    "wait, hold off, or reserve it for a demo/meeting/manual handling\n"
     "- general: everything else that needs a human-style diagnosis\n\n"
-    "Output JSON only: {\"module\": \"<module_name>\"}\n"
-    "No explanation. No confidence score. Just the module name."
+    "IMPORTANT: Check the comments carefully. If ANY comment signals the ticket should not "
+    "be touched right now (e.g. 'leave this as is', 'do not process', 'on hold', "
+    "'using for demo', 'handle manually'), classify as 'hold'.\n\n"
+    "Output JSON only: {\"module\": \"<module_name>\", \"hold_reason\": \"<if hold, quote the triggering comment, else empty>\"}\n"
+    "No other explanation."
 )
 
 
@@ -112,6 +118,12 @@ def _call_llm(client: "OpenAI", model: str, prompt: str) -> str | None:
         if module_name not in KNOWN_MODULES:
             print(f"[router] {model}: unknown module '{module_name}' — ignoring")
             return None
+        # Attach hold_reason as a side-channel annotation on the string
+        # so the orchestrator can surface it without changing the return type
+        if module_name == "hold":
+            hold_reason = parsed.get("hold_reason", "")
+            if hold_reason:
+                print(f"[router] hold detected — reason: {hold_reason[:120]}")
         return module_name
     except (ValueError, KeyError, json.JSONDecodeError, OSError) as exc:
         print(f"[router] {model} call failed ({type(exc).__name__}: {exc})")
@@ -131,13 +143,27 @@ def _build_prompt(ticket: dict) -> str:
     description_raw = fields.get("description") or {}
     description = _extract_plain_text(description_raw)[:500]
 
+    # Include comments so the router can detect hold instructions
+    comments_raw = (fields.get("comment") or {}).get("comments", [])
+    comments_text = ""
+    if comments_raw:
+        lines = []
+        for c in comments_raw[-10:]:  # last 10 comments only
+            author = (c.get("author") or {}).get("displayName", "?")
+            body = _extract_plain_text(c.get("body") or {})
+            if body.strip():
+                lines.append(f"[{author}]: {body.strip()[:200]}")
+        if lines:
+            comments_text = "\nComments (latest 10):\n" + "\n".join(lines)
+
     return (
         f"Ticket: {ticket.get('key', '')}\n"
         f"Summary: {summary}\n"
         f"Topic field: {topic} (id={topic_id})\n"
         f"Reporter email: {reporter_email}\n"
         f"Organization: {org}\n"
-        f"Description (first 500 chars): {description}\n\n"
+        f"Description (first 500 chars): {description}"
+        f"{comments_text}\n\n"
         f"Which module should handle this ticket?"
     )
 

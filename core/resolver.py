@@ -74,12 +74,43 @@ def give_proposal(
     return response["number"]
 
 
-def post_module_needed(ticket_id: str, module_name: str, snapshot: dict) -> int:
+def post_hold_notice(ticket_id: str, hold_reason: str) -> int:
     """
-    Post a trigger issue for modules that require a local run (e.g. orphaned_transaction).
-    localbrain.py watches for this label and fires the module locally.
+    Post a guidance issue when the router detects a hold instruction in ticket comments.
+    Labels with scd-guidance-needed. Human can override by commenting 'scd-core: proceed'
+    on this issue and re-running the scan.
     Returns the created issue number.
     """
+    repo = _repo()
+    url = f"https://api.github.com/repos/{repo}/issues"
+
+    title = f"[ON HOLD] {ticket_id} — human instruction detected in comments"
+    body = (
+        f"## ⏸️ Ticket On Hold\n\n"
+        f"The router detected a comment instructing the team not to process this ticket.\n\n"
+        f"| Field | Value |\n"
+        f"|-------|-------|\n"
+        f"| **Ticket** | `{ticket_id}` |\n"
+        f"| **Reason** | {hold_reason or '_See ticket comments_'} |\n\n"
+        f"---\n\n"
+        f"**To override and proceed anyway:**\n"
+        f"Add a comment to this issue containing `scd-core: proceed`, then re-run the scan.\n"
+    )
+
+    payload = {
+        "title": title,
+        "body": body,
+        "labels": [GUIDANCE_LABEL],
+    }
+
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        response = json.loads(r.read())
+    return response["number"]
+
+
+def post_module_needed(ticket_id: str, module_name: str, snapshot: dict) -> int:
     repo = _repo()
     url = f"https://api.github.com/repos/{repo}/issues"
 
