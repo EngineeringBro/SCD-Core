@@ -25,6 +25,7 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+from datetime import datetime, timezone
 from dataclasses import asdict
 from core.jira_fetcher import JiraReadClient
 from core.registry import discover_modules
@@ -102,10 +103,17 @@ def run() -> None:
             prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
             prev_issue = prev_entry.get("proposal_issue")
             if prev_issue is None:
-                # Previous run completed but failed to post a proposal (e.g. localbrain not running,
-                # gatekeeper denied, module error). Reprocess so we get a proposal this time.
-                print(f"[orchestrator] {ticket_id}: previous run had no proposal — clearing state, reprocessing")
-                current_state.get("processed_tickets", {}).pop(ticket_id, None)
+                # No proposal was posted. Distinguish two cases:
+                # 1. Waiting for localbrain — local_brain_caller_issue is open → skip
+                # 2. Gatekeeper denied / module error — no pending caller → reprocess
+                caller_issue = prev_entry.get("local_brain_caller_issue")
+                if caller_issue and not is_issue_closed(caller_issue):
+                    print(f"[orchestrator] {ticket_id}: waiting for localbrain (caller issue #{caller_issue}) — skipping")
+                    skipped_state += 1
+                    continue
+                else:
+                    print(f"[orchestrator] {ticket_id}: previous run had no proposal — clearing state, reprocessing")
+                    current_state.get("processed_tickets", {}).pop(ticket_id, None)
             elif is_issue_closed(prev_issue):
                 print(f"[orchestrator] {ticket_id}: previous issue #{prev_issue} is closed — clearing state, reprocessing")
                 current_state.get("processed_tickets", {}).pop(ticket_id, None)
@@ -163,7 +171,11 @@ def run() -> None:
             snapshot = {"ticket": ticket, "module": module.name}
             trigger_issue = post_module_needed(ticket_id, module.name, snapshot)
             print(f"[orchestrator] {ticket_id}: needs_local_run — posted local-brain-caller issue #{trigger_issue}")
-            state_store.mark_processed(current_state, ticket_id, proposal_issue=None)
+            current_state.setdefault("processed_tickets", {})[ticket_id] = {
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+                "proposal_issue": None,
+                "local_brain_caller_issue": trigger_issue,
+            }
             continue
 
         try:
