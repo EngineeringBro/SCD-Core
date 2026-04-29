@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 import time
 import urllib.error
@@ -31,6 +32,9 @@ MODULE_NEEDED_LABEL = "local-brain-caller"
 MODULE_COMPLETE_LABEL = "local-brain-complete"
 GITHUB_API = "https://api.github.com"
 POLL_INTERVAL_DEFAULT = 60   # seconds — overridden by X-Poll-Interval header
+WORKSPACE_ROOT = Path(os.path.expanduser("~")) / "Documents" / "Cowork"
+PROMPT_PATH = WORKSPACE_ROOT / ".github" / "prompts" / "scd-localbrain.prompt.md"
+PROMPT_CONTEXT_PATH = WORKSPACE_ROOT / "_ai" / "workspace" / "scd-localbrain-current.json"
 
 
 # ── GitHub API helpers ────────────────────────────────────────────────────────
@@ -119,10 +123,21 @@ def _load_env() -> None:
                     os.environ.setdefault(key.strip(), val.strip())
 
 
-_PROMPT_PATH = os.path.join(
-    os.path.expanduser("~"), "Documents", "Cowork",
-    ".github", "prompts", "scd-localbrain.prompt.md"
-)
+def _write_prompt_context(issue: dict, snapshot: dict) -> None:
+    PROMPT_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROMPT_CONTEXT_PATH.write_text(
+        json.dumps(
+            {
+                "issue_number": issue["number"],
+                "issue_title": issue.get("title", ""),
+                "repository": _repo(),
+                "snapshot": snapshot,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _run_module_for_issue(issue: dict) -> None:
@@ -131,6 +146,11 @@ def _run_module_for_issue(issue: dict) -> None:
     issue_number = issue["number"]
     issue_title = issue.get("title", "")
     snapshot = _extract_snapshot_from_issue(issue)
+    if snapshot is None:
+        print(f"[localbrain] #{issue_number}: no snapshot JSON found in issue body — open the caller issue manually")
+        return
+
+    _write_prompt_context(issue, snapshot)
     ticket_id = snapshot.get("ticket", {}).get("key", "?") if snapshot else "?"
 
     print()
@@ -141,16 +161,17 @@ def _run_module_for_issue(issue: dict) -> None:
     print(f"  Ticket       : {ticket_id}")
     print()
     print("  Opening scd-localbrain prompt in VS Code...")
+    print(f"  Context      : {PROMPT_CONTEXT_PATH}")
     print("  Run it in Copilot chat — orchestrator waits 10 min.")
     print("=" * 60)
     print()
 
     # Open the prompt file in VS Code so the user can click Run in Copilot chat
     try:
-        subprocess.Popen(["code", "--reuse-window", _PROMPT_PATH])
+        subprocess.Popen(["code", "--reuse-window", str(PROMPT_PATH)])
     except FileNotFoundError:
         print("[localbrain] 'code' CLI not found — open the prompt manually:")
-        print(f"  {_PROMPT_PATH}")
+        print(f"  {PROMPT_PATH}")
 
 
 def _run_module_for_ticket(ticket_id: str) -> None:

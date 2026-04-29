@@ -6,6 +6,7 @@ proposal JSON attached as a code block.
 from __future__ import annotations
 import json
 import os
+import urllib.error
 import urllib.request
 import urllib.parse
 from core.resolution_suggestion import ResolutionSuggestion
@@ -33,9 +34,9 @@ def _headers() -> dict:
 
 
 def _repo() -> str:
-    repo = os.environ.get(REPO_ENV_VAR, "")
+    repo = os.environ.get(REPO_ENV_VAR, "") or os.environ.get("GITHUB_REPO", "")
     if not repo:
-        raise RuntimeError(f"Env var {REPO_ENV_VAR} not set")
+        raise RuntimeError(f"Env var {REPO_ENV_VAR} or GITHUB_REPO not set")
     return repo
 
 
@@ -140,6 +141,42 @@ def post_module_needed(ticket_id: str, module_name: str, snapshot: dict) -> int:
     with urllib.request.urlopen(req, timeout=15) as r:
         response = json.loads(r.read())
     return response["number"]
+
+
+def complete_module_needed(issue_number: int, suggestion: ResolutionSuggestion) -> None:
+    """Post localbrain output back to the caller issue and mark it complete."""
+    repo = _repo()
+    suggestion_json = json.dumps(asdict(suggestion), indent=2, ensure_ascii=False)
+    result_comment = (
+        f"## ✅ Brain 1 Complete\n\n"
+        f"Module `{suggestion.module}` finished extraction for `{suggestion.ticket_id}`.\n"
+        f"Orchestrator will continue to gatekeeper and post the proposal.\n\n"
+        f"<details>\n"
+        f"<summary>ResolutionSuggestion (for orchestrator)</summary>\n\n"
+        f"```json\n{suggestion_json}\n```\n"
+        f"</details>\n"
+    )
+
+    comment_url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments"
+    comment_payload = json.dumps({"body": result_comment}).encode()
+    req = urllib.request.Request(comment_url, data=comment_payload, headers=_headers(), method="POST")
+    with urllib.request.urlopen(req, timeout=15):
+        pass
+
+    labels_url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/labels"
+    label_payload = json.dumps({"labels": [MODULE_COMPLETE_LABEL]}).encode()
+    req = urllib.request.Request(labels_url, data=label_payload, headers=_headers(), method="POST")
+    with urllib.request.urlopen(req, timeout=15):
+        pass
+
+    encoded = urllib.parse.quote(MODULE_NEEDED_LABEL)
+    remove_url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/labels/{encoded}"
+    req = urllib.request.Request(remove_url, headers=_headers(), method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=15):
+            pass
+    except urllib.error.HTTPError:
+        pass
 
 
 def close_proposal(issue_number: int, comment: str) -> None:

@@ -18,7 +18,8 @@ import re
 import yaml
 from pathlib import Path
 from core.module_base import Module
-from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
+from core.resolution_suggestion import ResolutionSuggestion
+from modules.orphaned_transaction_module_v1_1.suggestion_builder import build_suggestion_from_extraction
 
 try:
     from openai import OpenAI
@@ -162,92 +163,12 @@ class OrphanedTransactionModule(Module):
         ticket_id = ticket["key"]
         fields = ticket.get("fields", {})
         subject = fields.get("summary", "")
-        status = (fields.get("status") or {}).get("name", "")
-        comment_count = fields.get("comment", {}).get("total", 0)
-
         client_url = _extract_client_url(fields)
-        client_name, client_source = _resolve_client(fields, client_url)
+        client_name, _client_source = _resolve_client(fields, client_url)
         base_url = CLIENT_TABLE.get(client_name, client_url or "unknown")
         rq_ticket = _extract_rq_ticket(subject, fields)
-
         extraction_result = self._run_brain1_loop(ticket_id, fields, base_url, rq_ticket)
-        sql_statements = _fill_sql(extraction_result, rq_ticket)
-        confidence = 0.93 if extraction_result.get("extraction_complete") else 0.40
-        transaction_word = "transactions" if len(sql_statements) > 1 else "transaction"
-        closing_actions: list[Action] = []
-        if extraction_result.get("extraction_complete"):
-            closing_actions = [
-                Action(
-                    step=len(sql_statements) + 4,
-                    type="jira_internal_note",
-                    payload={"body": "This ticket was resolved using my AI Agent", "public": False},
-                ),
-                Action(
-                    step=len(sql_statements) + 5,
-                    type="jira_public_comment",
-                    payload={"body": f"Hello,\n\nWe have added the {transaction_word}. Let us know if you need anything else!"},
-                ),
-            ]
-
-        return ResolutionSuggestion(
-            ticket_id=ticket_id,
-            module=self.name,
-            module_version=self.version,
-            diagnosis=(
-                f"Orphaned transaction on {client_name}. "
-                f"Payment processed through Global Payments Terminal but not linked to "
-                f"RQ ticket {rq_ticket or '(see extraction)'}. "
-                f"SQL generated to re-link the transaction."
-            ),
-            evidence=[
-                {"source": "topic_field", "value": "10446 (Transaction Errors)"},
-                {"source": "subject", "value": subject},
-                {"source": "client_identified", "value": client_name},
-                {"source": "client_source", "value": client_source},
-                {"source": "rq_ticket_extracted", "value": rq_ticket or "not found"},
-                {"source": "extraction_complete", "value": str(extraction_result.get("extraction_complete", False))},
-                {"source": "transaction_count", "value": str(len(extraction_result.get("transactions", [])))},
-            ],
-            revalidation_targets=[
-                RevalidationTarget(
-                    type="jira_field",
-                    snapshot={"field": "status", "value": status},
-                ),
-                RevalidationTarget(
-                    type="jira_comment_count",
-                    snapshot={"ticket": ticket_id, "count": comment_count},
-                ),
-            ],
-            actions=[
-                Action(
-                    step=i + 1,
-                    type="sql",
-                    payload={"statement": stmt},
-                )
-                for i, stmt in enumerate(sql_statements)
-            ] + [
-                Action(
-                    step=len(sql_statements) + 1,
-                    type="jira_field_update",
-                    payload={"field": "customfield_10170", "value_id": "10446"},
-                ),
-                Action(
-                    step=len(sql_statements) + 2,
-                    type="jira_field_update",
-                    payload={"field": "customfield_10201", "value_id": "10499"},
-                ),
-                Action(
-                    step=len(sql_statements) + 3,
-                    type="jira_transition",
-                    payload={"to": "Resolved", "resolution": "Fixed / Completed"},
-                ),
-            ] + closing_actions,
-            module_confidence=confidence,
-            module_notes=(
-                "Brain 1 + Playwright agentic extraction. "
-                f"Transactions found: {len(extraction_result.get('transactions', []))}."
-            ),
-        )
+        return build_suggestion_from_extraction(ticket, extraction_result)
 
     def _run_brain1_loop(
         self,
@@ -265,11 +186,11 @@ class OrphanedTransactionModule(Module):
         chrome_profile = os.environ.get("CHROME_USER_DATA_DIR", "")
 
         if not gh_token or OpenAI is None:
-            print(f"[orphaned_tx] COPILOT_TOKEN not set — skipping Brain1 extraction")
+            print("[orphaned_tx] COPILOT_TOKEN not set — skipping Brain1 extraction")
             return {"extraction_complete": False, "transactions": []}
 
         if not chrome_profile:
-            print(f"[orphaned_tx] CHROME_USER_DATA_DIR not set — skipping Playwright extraction")
+            print("[orphaned_tx] CHROME_USER_DATA_DIR not set — skipping Playwright extraction")
             return {"extraction_complete": False, "transactions": []}
 
         ticket_context = _build_ticket_context(
@@ -383,31 +304,6 @@ class OrphanedTransactionModule(Module):
 
         print(f"[orphaned_tx] Max turns ({MAX_TOOL_TURNS}) reached without final answer")
         return {"extraction_complete": False, "transactions": []}
-
-
-# ── SQL filling ───────────────────────────────────────────────────────────────
-
-def _fill_sql(extraction: dict, rq_ticket: str | None) -> list[str]:
-    transactions = extraction.get("transactions", [])
-    if not transactions:
-        return ["-- No transactions extracted. Manual intervention required."]
-    statements = []
-    for tx in transactions:
-        stmt = SQL_TEMPLATE.format(
-            rq_ticket=rq_ticket or tx.get("rq_ticket", ""),
-            customer_id=tx.get("customer_id", ""),
-            location_id=tx.get("location_id", ""),
-            terminal_id=tx.get("terminal_id", ""),
-            payment_method_id=tx.get("payment_method_id", ""),
-            amount=tx.get("amount", ""),
-            card_brand=tx.get("card_brand", ""),
-            last4=tx.get("last4", ""),
-            timestamp=tx.get("timestamp", ""),
-            staff_user_id=tx.get("staff_user_id", ""),
-            transaction_id=tx.get("transaction_id", ""),
-        )
-        statements.append(stmt)
-    return statements
 
 
 def _build_ticket_context(

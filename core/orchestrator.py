@@ -44,6 +44,27 @@ LOCALBRAIN_POLL_INTERVAL = 15   # seconds between polls
 LOCALBRAIN_TIMEOUT = 600        # 10 minutes — localbrain must complete within this
 
 
+def _extract_localbrain_result(comments: list[dict]) -> dict | None:
+    for comment in reversed(comments):
+        body = comment.get("body", "")
+        matches = re.findall(r"```json\n(.*?)\n```", body, re.DOTALL)
+        if not matches:
+            continue
+        try:
+            return json.loads(matches[-1])
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return None
+
+
+def _get_completed_localbrain_result(caller_issue: int) -> dict | None:
+    issue = get_issue(caller_issue)
+    labels = [lb["name"] for lb in issue.get("labels", [])]
+    if MODULE_COMPLETE_LABEL not in labels:
+        return None
+    return _extract_localbrain_result(get_issue_comments(caller_issue))
+
+
 def _wait_for_localbrain(caller_issue: int) -> dict | None:
     """
     Poll caller issue until local-brain-complete label appears.
@@ -52,19 +73,9 @@ def _wait_for_localbrain(caller_issue: int) -> dict | None:
     deadline = time.time() + LOCALBRAIN_TIMEOUT
     elapsed = 0
     while time.time() < deadline:
-        issue = get_issue(caller_issue)
-        labels = [lb["name"] for lb in issue.get("labels", [])]
-        if MODULE_COMPLETE_LABEL in labels:
-            comments = get_issue_comments(caller_issue)
-            for comment in reversed(comments):
-                body = comment.get("body", "")
-                matches = re.findall(r"```json\n(.*?)\n```", body, re.DOTALL)
-                if matches:
-                    try:
-                        return json.loads(matches[-1])
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-            return None  # labeled complete but no JSON found
+        result = _get_completed_localbrain_result(caller_issue)
+        if result is not None:
+            return result
         time.sleep(LOCALBRAIN_POLL_INTERVAL)
         elapsed += LOCALBRAIN_POLL_INTERVAL
         print(f"[orchestrator] waiting for localbrain on issue #{caller_issue}... {elapsed}s elapsed")
@@ -151,24 +162,31 @@ def run() -> None:
 
     for ticket in tickets:
         ticket_id = ticket["key"]
+        prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
+        caller_issue = prev_entry.get("local_brain_caller_issue") if prev_entry.get("proposal_issue") is None else None
+        pending_localbrain_result = None
 
-        if not state_store.ticket_needs_processing(current_state, ticket):
+        if caller_issue:
+            pending_localbrain_result = _get_completed_localbrain_result(caller_issue)
+            if pending_localbrain_result is not None:
+                print(f"[orchestrator] {ticket_id}: resuming completed localbrain result from issue #{caller_issue}")
+            elif not is_issue_closed(caller_issue):
+                print(f"[orchestrator] {ticket_id}: waiting for localbrain (caller issue #{caller_issue}) — skipping")
+                skipped_state += 1
+                continue
+            else:
+                print(f"[orchestrator] {ticket_id}: caller issue #{caller_issue} closed without completion — clearing state, reprocessing")
+                current_state.get("processed_tickets", {}).pop(ticket_id, None)
+                prev_entry = {}
+                caller_issue = None
+
+        if pending_localbrain_result is None and not state_store.ticket_needs_processing(current_state, ticket):
             # If the previous proposal Issue was closed (executed, guidance captured, dismissed)
             # the ticket is eligible for a fresh scan — clear it from state and continue.
-            prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
             prev_issue = prev_entry.get("proposal_issue")
             if prev_issue is None:
-                # No proposal was posted. Distinguish two cases:
-                # 1. Waiting for localbrain — local_brain_caller_issue is open → skip
-                # 2. Gatekeeper denied / module error — no pending caller → reprocess
-                caller_issue = prev_entry.get("local_brain_caller_issue")
-                if caller_issue and not is_issue_closed(caller_issue):
-                    print(f"[orchestrator] {ticket_id}: waiting for localbrain (caller issue #{caller_issue}) — skipping")
-                    skipped_state += 1
-                    continue
-                else:
-                    print(f"[orchestrator] {ticket_id}: previous run had no proposal — clearing state, reprocessing")
-                    current_state.get("processed_tickets", {}).pop(ticket_id, None)
+                print(f"[orchestrator] {ticket_id}: previous run had no proposal — clearing state, reprocessing")
+                current_state.get("processed_tickets", {}).pop(ticket_id, None)
             elif is_issue_closed(prev_issue):
                 print(f"[orchestrator] {ticket_id}: previous issue #{prev_issue} is closed — clearing state, reprocessing")
                 current_state.get("processed_tickets", {}).pop(ticket_id, None)
@@ -224,7 +242,9 @@ def run() -> None:
         # If this module requires local Playwright session:
         # post caller issue, wait inline for localbrain to complete, then continue.
         suggestion = None
-        if module.needs_local_run:
+        if pending_localbrain_result is not None:
+            suggestion = _dict_to_suggestion(pending_localbrain_result)
+        elif module.needs_local_run:
             snapshot = {"ticket": ticket, "module": module.name}
             trigger_issue = post_module_needed(ticket_id, module.name, snapshot)
             print(f"[orchestrator] {ticket_id}: needs_local_run — posted local-brain-caller issue #{trigger_issue}, waiting up to {LOCALBRAIN_TIMEOUT//60} min...")
