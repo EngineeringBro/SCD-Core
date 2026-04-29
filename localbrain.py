@@ -119,8 +119,15 @@ def _load_env() -> None:
                     os.environ.setdefault(key.strip(), val.strip())
 
 
+_PROMPT_PATH = os.path.join(
+    os.path.expanduser("~"), "Documents", "Cowork",
+    ".github", "prompts", "scd-localbrain.prompt.md"
+)
+
+
 def _run_module_for_issue(issue: dict) -> None:
     """Notify the user to run the VS Code localbrain prompt for this issue."""
+    import subprocess
     issue_number = issue["number"]
     issue_title = issue.get("title", "")
     snapshot = _extract_snapshot_from_issue(issue)
@@ -133,13 +140,17 @@ def _run_module_for_issue(issue: dict) -> None:
     print(f"  Title        : {issue_title}")
     print(f"  Ticket       : {ticket_id}")
     print()
-    print("  ACTION REQUIRED:")
-    print("  Open VS Code Copilot chat and run the prompt:")
-    print("  'scd-localbrain'  (in .github/prompts/)")
-    print()
-    print("  The orchestrator is waiting up to 10 minutes.")
+    print("  Opening scd-localbrain prompt in VS Code...")
+    print("  Run it in Copilot chat — orchestrator waits 10 min.")
     print("=" * 60)
     print()
+
+    # Open the prompt file in VS Code so the user can click Run in Copilot chat
+    try:
+        subprocess.Popen(["code", "--reuse-window", _PROMPT_PATH])
+    except FileNotFoundError:
+        print("[localbrain] 'code' CLI not found — open the prompt manually:")
+        print(f"  {_PROMPT_PATH}")
 
 
 def _run_module_for_ticket(ticket_id: str) -> None:
