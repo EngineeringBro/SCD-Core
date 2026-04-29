@@ -101,7 +101,12 @@ def run() -> None:
             # the ticket is eligible for a fresh scan — clear it from state and continue.
             prev_entry = current_state.get("processed_tickets", {}).get(ticket_id, {})
             prev_issue = prev_entry.get("proposal_issue")
-            if prev_issue and is_issue_closed(prev_issue):
+            if prev_issue is None:
+                # Previous run completed but failed to post a proposal (e.g. localbrain not running,
+                # gatekeeper denied, module error). Reprocess so we get a proposal this time.
+                print(f"[orchestrator] {ticket_id}: previous run had no proposal — clearing state, reprocessing")
+                current_state.get("processed_tickets", {}).pop(ticket_id, None)
+            elif is_issue_closed(prev_issue):
                 print(f"[orchestrator] {ticket_id}: previous issue #{prev_issue} is closed — clearing state, reprocessing")
                 current_state.get("processed_tickets", {}).pop(ticket_id, None)
             else:
