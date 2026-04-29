@@ -309,6 +309,8 @@ class OrphanedTransactionModule(Module):
                     )
 
                     msg = response.choices[0].message
+                    if msg.content:
+                        print(f"[sonnet] {msg.content}")
                     tool_calls_serializable = [
                         {
                             "id": tc.id,
