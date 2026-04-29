@@ -25,14 +25,69 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+import re
+import time
 from datetime import datetime, timezone
 from dataclasses import asdict
 from core.jira_fetcher import JiraReadClient
 from core.registry import discover_modules
 from core import gatekeeper, state as state_store
 from core.router import classify as brain0_classify
-from core.resolver import give_proposal, post_module_needed, post_hold_notice, is_issue_closed
+from core.resolver import (
+    give_proposal, post_module_needed, post_hold_notice, is_issue_closed,
+    get_issue, get_issue_comments, MODULE_COMPLETE_LABEL,
+)
+from core.resolution_suggestion import ResolutionSuggestion, Action, RevalidationTarget
 from core.learner import get_module_override
+
+LOCALBRAIN_POLL_INTERVAL = 15   # seconds between polls
+LOCALBRAIN_TIMEOUT = 600        # 10 minutes — localbrain must complete within this
+
+
+def _wait_for_localbrain(caller_issue: int) -> dict | None:
+    """
+    Poll caller issue until local-brain-complete label appears.
+    Returns the suggestion dict parsed from the last JSON comment, or None on timeout.
+    """
+    deadline = time.time() + LOCALBRAIN_TIMEOUT
+    elapsed = 0
+    while time.time() < deadline:
+        issue = get_issue(caller_issue)
+        labels = [lb["name"] for lb in issue.get("labels", [])]
+        if MODULE_COMPLETE_LABEL in labels:
+            comments = get_issue_comments(caller_issue)
+            for comment in reversed(comments):
+                body = comment.get("body", "")
+                matches = re.findall(r"```json\n(.*?)\n```", body, re.DOTALL)
+                if matches:
+                    try:
+                        return json.loads(matches[-1])
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+            return None  # labeled complete but no JSON found
+        time.sleep(LOCALBRAIN_POLL_INTERVAL)
+        elapsed += LOCALBRAIN_POLL_INTERVAL
+        print(f"[orchestrator] waiting for localbrain on issue #{caller_issue}... {elapsed}s elapsed")
+    return None  # timed out
+
+
+def _dict_to_suggestion(d: dict) -> ResolutionSuggestion:
+    """Reconstruct a ResolutionSuggestion from the dict localbrain posts back."""
+    actions = [Action(**a) for a in d.get("actions", [])]
+    revalidation_targets = [RevalidationTarget(**r) for r in d.get("revalidation_targets", [])]
+    return ResolutionSuggestion(
+        ticket_id=d["ticket_id"],
+        module=d["module"],
+        module_version=d["module_version"],
+        diagnosis=d["diagnosis"],
+        evidence=d["evidence"],
+        revalidation_targets=revalidation_targets,
+        actions=actions,
+        module_confidence=d["module_confidence"],
+        module_notes=d.get("module_notes", ""),
+        sub_agent_attribution=d.get("sub_agent_attribution", {}),
+        hmac_signature=d.get("hmac_signature", ""),
+    )
 
 # JQL to find open SCD tickets
 JQL_BASE = (
@@ -166,23 +221,30 @@ def run() -> None:
                 continue
             print(f"[orchestrator] {ticket_id}: Router → '{module.name}'")
 
-        # If this module requires local Playwright session, post trigger issue and stop
+        # If this module requires local Playwright session:
+        # post caller issue, wait inline for localbrain to complete, then continue.
+        suggestion = None
         if module.needs_local_run:
             snapshot = {"ticket": ticket, "module": module.name}
             trigger_issue = post_module_needed(ticket_id, module.name, snapshot)
-            print(f"[orchestrator] {ticket_id}: needs_local_run — posted local-brain-caller issue #{trigger_issue}")
-            current_state.setdefault("processed_tickets", {})[ticket_id] = {
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-                "proposal_issue": None,
-                "local_brain_caller_issue": trigger_issue,
-            }
-            continue
-
-        try:
-            suggestion = module.run(ticket, jira)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
-            continue
+            print(f"[orchestrator] {ticket_id}: needs_local_run — posted local-brain-caller issue #{trigger_issue}, waiting up to {LOCALBRAIN_TIMEOUT//60} min...")
+            result = _wait_for_localbrain(trigger_issue)
+            if result is None:
+                print(f"[orchestrator] {ticket_id}: localbrain timed out — saving state, will retry next scan")
+                current_state.setdefault("processed_tickets", {})[ticket_id] = {
+                    "processed_at": datetime.now(timezone.utc).isoformat(),
+                    "proposal_issue": None,
+                    "local_brain_caller_issue": trigger_issue,
+                }
+                continue
+            print(f"[orchestrator] {ticket_id}: localbrain complete — continuing to gatekeeper")
+            suggestion = _dict_to_suggestion(result)
+        else:
+            try:
+                suggestion = module.run(ticket, jira)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[orchestrator] {ticket_id}: module.run() failed — {exc}")
+                continue
 
         # Stamp topic on every suggestion regardless of module, so resolver.py
         # and the learning store can surface/save it correctly.

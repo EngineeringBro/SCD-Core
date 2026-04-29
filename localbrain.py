@@ -178,51 +178,22 @@ def _run_module_for_issue(issue: dict) -> None:
         print(f"[localbrain] #{issue_number}: module run failed — {exc}")
         return
 
-    # Pass suggestion through Gatekeeper → same path as any other module
-    from core import gatekeeper
-    from core.resolver import give_proposal
-
-    gate_result = gatekeeper.check(suggestion, source_ticket_id=ticket_id)
-    gate_summary = (
-        f"ALLOW ({len(gate_result.checks)} checks passed)"
-        if gate_result.passed
-        else f"DENY — {'; '.join(c.reason for c in gate_result.failures)}"
+    # Post suggestion JSON back to the caller issue so orchestrator can pick it up
+    from dataclasses import asdict as _asdict
+    suggestion_json = json.dumps(_asdict(suggestion), indent=2, ensure_ascii=False)
+    result_comment = (
+        f"## ✅ Brain 1 Complete\n\n"
+        f"Module `{module_name}` finished extraction for `{ticket_id}`.\n"
+        f"Orchestrator will continue to gatekeeper and post the proposal.\n\n"
+        f"<details>\n"
+        f"<summary>ResolutionSuggestion (for orchestrator)</summary>\n\n"
+        f"```json\n{suggestion_json}\n```\n"
+        f"</details>\n"
     )
-    print(f"[localbrain] #{issue_number}: gatekeeper => {gate_result.verdict}")
-
-    if not gate_result.passed:
-        _post_comment(
-            issue_number,
-            f"## ❌ Gatekeeper DENY\n\n{gate_summary}\n\nManual review required.",
-        )
-        _remove_label(issue_number, MODULE_NEEDED_LABEL)
-        _add_label(issue_number, MODULE_COMPLETE_LABEL)
-        print(f"[localbrain] #{issue_number}: gatekeeper DENY — proposal blocked")
-        return
-
-    # Sign HMAC if key is available
-    hmac_key = os.environ.get("PROPOSAL_HMAC_KEY", "")
-    if hmac_key:
-        import hashlib, hmac as _hmac
-        from dataclasses import asdict as _asdict
-        payload = json.dumps(_asdict(suggestion), sort_keys=True, ensure_ascii=False)
-        payload_unsigned = json.loads(payload)
-        payload_unsigned["hmac_signature"] = ""
-        canonical = json.dumps(payload_unsigned, sort_keys=True, ensure_ascii=False).encode()
-        suggestion.hmac_signature = _hmac.new(hmac_key.encode(), canonical, hashlib.sha256).hexdigest()
-
-    # Post give_proposal issue (same as orchestrator path)
-    proposal_issue_number = give_proposal(suggestion, gate_summary)
-    print(f"[localbrain] #{issue_number}: posted give_proposal issue #{proposal_issue_number}")
-
-    # Close the module-needed issue with a pointer to the proposal
-    _post_comment(
-        issue_number,
-        f"✅ Module complete. Proposal posted as issue #{proposal_issue_number} — review and trigger Execute there.",
-    )
+    _post_comment(issue_number, result_comment)
     _remove_label(issue_number, MODULE_NEEDED_LABEL)
     _add_label(issue_number, MODULE_COMPLETE_LABEL)
-    print(f"[localbrain] #{issue_number}: done — labeled local-brain-complete")
+    print(f"[localbrain] #{issue_number}: posted suggestion JSON, labeled local-brain-complete — orchestrator will continue")
 
 
 def _run_module_for_ticket(ticket_id: str) -> None:

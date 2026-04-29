@@ -178,6 +178,24 @@ def is_issue_closed(issue_number: int) -> bool:
         return False
 
 
+def get_issue(issue_number: int) -> dict:
+    """Fetch a GitHub Issue by number. Used by orchestrator to poll for localbrain completion."""
+    repo = _repo()
+    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}"
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def get_issue_comments(issue_number: int) -> list[dict]:
+    """Fetch all comments on a GitHub Issue. Used by orchestrator to read localbrain result."""
+    repo = _repo()
+    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments?per_page=100"
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
 def fetch_proposal_json(issue_number: int) -> dict:
     """
     Fetch a proposal GitHub Issue and extract the embedded ResolutionSuggestion JSON.
