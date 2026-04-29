@@ -109,6 +109,24 @@ def run() -> None:
                 skipped_state += 1
                 continue
 
+        # Skip any ticket where a comment contains the opt-out phrase.
+        # To exempt a ticket: add an internal comment containing "scd-core: skip"
+        # or the legacy phrase "leave this ticket as is".
+        comments_raw = (ticket.get("fields", {}).get("comment") or {}).get("comments", [])
+        skip_phrases = ("scd-core: skip", "leave this ticket as is")
+        def _comment_text(c: dict) -> str:
+            body = c.get("body") or {}
+            parts = []
+            for block in body.get("content", []):
+                for inline in block.get("content", []):
+                    if inline.get("type") == "text":
+                        parts.append(inline.get("text", ""))
+            return " ".join(parts).lower()
+        if any(phrase in _comment_text(c) for c in comments_raw for phrase in skip_phrases):
+            print(f"[orchestrator] {ticket_id}: opt-out phrase found in comment — skipping")
+            skipped_state += 1
+            continue
+
         # Check if a human has instructed a specific module for this ticket
         ticket_topic = (ticket.get("fields", {}).get("customfield_10170") or {}).get("value", "Unknown")
         forced_module_name = get_module_override(ticket_topic, ticket_id)
