@@ -52,12 +52,20 @@ _SYSTEM_PROMPT = (
 def classify(ticket: dict) -> str:
     """
     Classify a ticket into a module name.
-    Tier 1: GPT-4o-mini (fast, cheap).
+    Tier 0: Deterministic rules for high-confidence patterns (topic field + keywords).
+            Never overridden by LLM.
+    Tier 1: GPT-4o-mini (fast, cheap) for everything else.
     Tier 2: Sonnet fallback if mini returns 'general' on a non-obvious ticket,
             or if mini call fails entirely.
-    Tier 3: Deterministic topic-field rules if both LLM calls fail.
+    Tier 3: Deterministic rules again if both LLM calls fail.
     Returns a module name string — always.
     """
+    # Tier 0: deterministic-first for patterns we're certain about — LLM cannot override these
+    deterministic_first = _deterministic_fallback(ticket)
+    if deterministic_first != "general":
+        print(f"[router] deterministic-first → '{deterministic_first}' (skipping LLM)")
+        return deterministic_first
+
     gh_token = os.environ.get("COPILOT_TOKEN", "")
     if not gh_token or OpenAI is None:
         return _deterministic_fallback(ticket)
