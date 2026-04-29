@@ -1,23 +1,19 @@
 """
-localbrain.py — Local Module Runner
+localbrain.py — Local Brain Watcher
 
 Watches the GitHub repo for issues labeled 'local-brain-caller'.
-When one appears, extracts the ticket snapshot and runs the appropriate
-module locally (with Playwright access to your live Chrome session).
-Posts the completed action plan back to the same GitHub issue, then
-labels it 'local-brain-complete'.
+When one appears, prints a notification telling the user to run the
+'scd-localbrain' VS Code Copilot prompt, which uses the Playwright MCP
+extension (live Chrome session) to complete the extraction and post
+the ResolutionSuggestion JSON back to the caller issue.
 
 Usage:
     python localbrain.py --watch          # watch for new issues (blocking)
-    python localbrain.py --ticket SCD-123 # run module for a specific ticket directly
+    python localbrain.py --ticket SCD-123 # find and announce issue for a specific ticket
 
 Requirements:
-    - COPILOT_TOKEN env var (Sonnet API access)
-    - JIRA_API_TOKEN, JIRA_EMAIL, JIRA_BASE_URL (to fetch ticket snapshot)
-    - GH_TOKEN env var (GitHub API — read + comment + label issues)
+    - GH_TOKEN env var (GitHub API — read issues)
     - GITHUB_REPO env var (e.g. EngineeringBro/SCD-Core)
-    - Playwright + Chrome user profile path (CHROME_USER_DATA_DIR)
-    - playwright Python package installed
 """
 from __future__ import annotations
 import argparse
@@ -124,76 +120,26 @@ def _load_env() -> None:
 
 
 def _run_module_for_issue(issue: dict) -> None:
-    """Extract snapshot from issue, run module, post result back."""
+    """Notify the user to run the VS Code localbrain prompt for this issue."""
     issue_number = issue["number"]
     issue_title = issue.get("title", "")
-    print(f"[localbrain] Processing issue #{issue_number}: {issue_title}")
-
     snapshot = _extract_snapshot_from_issue(issue)
-    if snapshot is None:
-        print(f"[localbrain] #{issue_number}: no snapshot JSON found in issue body — skipping")
-        return
+    ticket_id = snapshot.get("ticket", {}).get("key", "?") if snapshot else "?"
 
-    ticket_data = snapshot.get("ticket", {})
-    module_name = snapshot.get("module", "")
-    ticket_id = ticket_data.get("key", "")
-
-    if not ticket_id or not module_name:
-        print(f"[localbrain] #{issue_number}: missing ticket_id or module_name in snapshot — skipping")
-        return
-
-    print(f"[localbrain] #{issue_number}: ticket={ticket_id} module={module_name}")
-
-    # Import and run the module
-    try:
-        if module_name == "orphaned_transaction":
-            # Use the self-contained localbrain/ copy — full Brain1+Playwright agentic loop.
-            # Step 9 (Jira edits) is intentionally excluded here; the executor handles it
-            # after human approval of the generated SQL + action plan.
-            _lb_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localbrain")
-            if _lb_path not in sys.path:
-                sys.path.insert(0, _lb_path)
-            from module import OrphanedTransactionModule  # localbrain/module.py
-            module = OrphanedTransactionModule()
-            jira = None  # Brain1 uses Playwright directly — Jira read client not needed
-        else:
-            from core.registry import discover_modules
-            from core.jira_fetcher import JiraReadClient
-            module_map = discover_modules()
-            module = module_map.get(module_name)
-            if module is None:
-                raise ValueError(f"Module '{module_name}' not found in loaded modules: {list(module_map.keys())}")
-            jira = JiraReadClient()
-
-        suggestion = module.run(ticket_data, jira)
-
-    except (ImportError, ValueError, RuntimeError) as exc:
-        error_body = (
-            f"## ❌ localbrain Error\n\n"
-            f"Failed to run module `{module_name}` for `{ticket_id}`.\n\n"
-            f"```\n{exc}\n```\n\n"
-            f"Manual intervention required."
-        )
-        _post_comment(issue_number, error_body)
-        print(f"[localbrain] #{issue_number}: module run failed — {exc}")
-        return
-
-    # Post suggestion JSON back to the caller issue so orchestrator can pick it up
-    from dataclasses import asdict as _asdict
-    suggestion_json = json.dumps(_asdict(suggestion), indent=2, ensure_ascii=False)
-    result_comment = (
-        f"## ✅ Brain 1 Complete\n\n"
-        f"Module `{module_name}` finished extraction for `{ticket_id}`.\n"
-        f"Orchestrator will continue to gatekeeper and post the proposal.\n\n"
-        f"<details>\n"
-        f"<summary>ResolutionSuggestion (for orchestrator)</summary>\n\n"
-        f"```json\n{suggestion_json}\n```\n"
-        f"</details>\n"
-    )
-    _post_comment(issue_number, result_comment)
-    _remove_label(issue_number, MODULE_NEEDED_LABEL)
-    _add_label(issue_number, MODULE_COMPLETE_LABEL)
-    print(f"[localbrain] #{issue_number}: posted suggestion JSON, labeled local-brain-complete — orchestrator will continue")
+    print()
+    print("=" * 60)
+    print("  ⚡  LOCAL BRAIN CALLER DETECTED")
+    print(f"  GitHub Issue : #{issue_number}")
+    print(f"  Title        : {issue_title}")
+    print(f"  Ticket       : {ticket_id}")
+    print()
+    print("  ACTION REQUIRED:")
+    print("  Open VS Code Copilot chat and run the prompt:")
+    print("  'scd-localbrain'  (in .github/prompts/)")
+    print()
+    print("  The orchestrator is waiting up to 10 minutes.")
+    print("=" * 60)
+    print()
 
 
 def _run_module_for_ticket(ticket_id: str) -> None:
