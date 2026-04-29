@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from core.jira_clients import JiraReadClient
+from core.jira_fetcher import JiraReadClient
 
 TARGET_FIELDS = {
     "customfield_10036": "Severity Level",

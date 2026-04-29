@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: local-v2
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -33,7 +35,7 @@ jobs:
       # Pull the **Topic** line out of the issue body.
       # Issue body contains a Markdown table row like:
       #   | **Topic** | Transaction Errors |
-      - name: Extract topic from issue body
+      - name: Extract topic and module from issue body
         id: topic
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
@@ -44,6 +46,12 @@ jobs:
             | sed 's/[[:space:]]*$//')
           echo "value=$topic" >> "$GITHUB_OUTPUT"
 
+          # Extract module name from table row: | **Module** | `orphaned_transaction` v1.1 |
+          module=$(echo "$ISSUE_BODY" \
+            | grep -oP '(?<=\| \*\*Module\*\* \| `)([^`\s]+)' \
+            | head -1)
+          echo "module=${module:-general}" >> "$GITHUB_OUTPUT"
+
       - name: Save guidance to knowledge store
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -51,6 +59,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           COMMENTER:    ${{ github.event.comment.user.login }}
           TOPIC:        ${{ steps.topic.outputs.value }}
+          MODULE_NAME:  ${{ steps.topic.outputs.module }}
         run: python scripts/save_guidance.py
 
       - name: Ensure required labels exist

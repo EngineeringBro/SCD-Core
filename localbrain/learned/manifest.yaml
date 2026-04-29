@@ -1,0 +1,33 @@
+ingestions: []
+patterns:
+  - pattern_id: standard_orphaned_transaction
+    status: active
+    version_added: "1.1.0"
+    description: |
+      Standard orphaned transaction: a payment was processed through Global Payments
+      Terminal but was not linked to the RepairQ ticket. Requires inserting a transaction
+      row via SQL to attach it.
+    provenance:
+      - event: ingested
+        from: orphaned-transaction-agent-v1.1
+        date: 2026-04-25
+        version: "1.1.0"
+        reviewed_by: hussein.shaib
+    matches:
+      topic_field_ids: ["10446"]
+      keywords: ["orphaned transaction", "orphan transaction", "stuck transaction"]
+    resolution:
+      diagnosis_template: |
+        Orphaned transaction on {client} — transaction {transaction_id} was processed
+        through Global Payments Terminal but not linked to RQ ticket {rq_ticket}.
+        Resolution: INSERT the transaction row to attach it.
+      requires_browser_resolution: true
+      note: |
+        This module identifies the ticket and confirms it is an orphaned transaction.
+        Full resolution (data extraction + SQL generation) requires the browser-based
+        v1.1 agent workflow documented in learned/agent_logic.md.
+        The module outputs a proposal directing the human to run that workflow.
+    confidence: 0.95
+    safety_constraints:
+      - claim_status_not_in: [fulfilled, declined, rejected, cancelled, ntf,
+                               returned, rejected_returned, whole_unit_replacement]

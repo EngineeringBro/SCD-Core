@@ -20,7 +20,7 @@ import sys
 # Run from repo root: python scripts/save_guidance.py
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.learning_store import save_guidance
+from core.learner import save_guidance
 
 # Canonical module names the agent knows about.
 _KNOWN_MODULES = {
@@ -60,6 +60,9 @@ def main() -> None:
     issue_number = int(os.environ.get("ISSUE_NUMBER", "0"))
     commenter = os.environ.get("COMMENTER", "unknown")
     topic = os.environ.get("TOPIC", "").strip()
+    # MODULE is extracted from the issue body by the workflow (| **Module** | `name` v... |)
+    # Falls back to "general" if not present (e.g. older guidance-needed issues)
+    module_name = os.environ.get("MODULE_NAME", "general").strip() or "general"
 
     if not comment_body:
         print("[save_guidance] Comment body is empty — nothing to save")
@@ -81,12 +84,13 @@ def main() -> None:
         print(f"[save_guidance] module_override detected: '{module_override}'")
 
     print(
-        f"[save_guidance] ticket={ticket_id} | topic={topic!r} | "
+        f"[save_guidance] ticket={ticket_id} | module={module_name} | topic={topic!r} | "
         f"by={commenter} | issue=#{issue_number}"
     )
 
     save_guidance(
         topic=topic,
+        module_name=module_name,
         ticket_id=ticket_id,
         guidance=comment_body,
         provided_by=commenter,
@@ -94,7 +98,7 @@ def main() -> None:
         module_override=module_override,
     )
 
-    print(f"[save_guidance] Done — guidance for topic '{topic}' saved.")
+    print(f"[save_guidance] Done — guidance for module '{module_name}' topic '{topic}' saved.")
 
 
 if __name__ == "__main__":

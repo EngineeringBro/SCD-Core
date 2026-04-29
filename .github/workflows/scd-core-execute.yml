@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: local-v2
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
@@ -52,7 +52,7 @@ jobs:
           git config user.email "scd-core@users.noreply.github.com"
           git add notifications/ state/
           git diff --cached --quiet || git commit -m "state: post-execution update for ${{ github.event.inputs.ticket_id }}"
-          git push
+          git push origin HEAD:local-v2
 
       - name: Upload execution trace
         if: always()

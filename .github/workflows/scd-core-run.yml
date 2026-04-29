@@ -22,11 +22,11 @@ jobs:
   scan-and-propose:
     name: Scan & Propose
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: local-v2
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
           git config user.email "scd-core@users.noreply.github.com"
           git add state/scan-state.json
           git diff --cached --quiet || git commit -m "state: update scan-state after run #${{ github.run_number }}"
-          git push
+          git push origin HEAD:local-v2
 
       - name: Upload run trace
         if: always()
