@@ -249,8 +249,8 @@ def _build_body(
     if suggestion.module == "orphaned_transaction":
         brief_steps = (
             "Run **SCD-Core: Execute** to automatically:\n\n"
-            "1. Post a customer reply on the Jira ticket\n"
-            "2. Post an internal comment on the Jira ticket\n"
+            "1. Post predefined customer reply on the Jira ticket\n"
+            "2. Post predefined internal comment on the Jira ticket\n"
             "3. Assign the ticket\n"
             "4. Resolve the ticket (Fixed / Completed)\n\n"
         )

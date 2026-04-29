@@ -98,6 +98,21 @@ def _check_action(action: Action, suggestion: ResolutionSuggestion) -> list[Gate
             reason="Public comment body contains unfilled placeholders." if "{" in body else "",
         ))
 
+    if action.type == "jira_internal_comment":
+        # For orphaned_transaction, only the predefined internal comment is allowed.
+        # Any AI-generated or custom internal comment body is rejected — no exceptions.
+        if suggestion.module == "orphaned_transaction":
+            allowed = "This ticket was resolved using my AI Agent"
+            body = action.payload.get("body", "")
+            checks.append(GateCheck(
+                rule_id=f"step{action.step}.internal_comment_predefined_only",
+                passed=body == allowed,
+                reason=(
+                    f"orphaned_transaction internal comment must be exactly '{allowed}' — "
+                    f"got: '{body[:80]}'"
+                ) if body != allowed else "",
+            ))
+
     return checks
 
 
